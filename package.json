@@ -1,0 +1,12 @@
+{
+  "name": "rampforge-atlas-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Editor SPA de texture atlases con degradados para texturizado 3D estilizado.",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs",
+    "preview": "node server.mjs"
+  }
+}

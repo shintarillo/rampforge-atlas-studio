@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b0c0f">
+  <meta name="description" content="RampForge Atlas Studio — Diseña, ajusta y exporta texture atlases de degradados para proyectos 3D estilizados.">
+  <title>RampForge — Atlas Studio</title>
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./css/styles.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/three.module.js",
+        "three/addons/": "./vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <svg class="svg-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M5 14.5v3.2A2.3 2.3 0 0 0 7.3 20h9.4a2.3 2.3 0 0 0 2.3-2.3v-3.2"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5"/><path d="M5 15.5v2.2A2.3 2.3 0 0 0 7.3 20h9.4a2.3 2.3 0 0 0 2.3-2.3v-2.2"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3.5h11.2L20 7.3v12.2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1Z"/><path d="M8 3.5v5h7v-5M8 20.5v-6h8v6"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-grip" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="9" cy="7" r="1.4"/><circle cx="15" cy="7" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="17" r="1.4"/><circle cx="15" cy="17" r="1.4"/></g></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3.7 8.4 4.7-8.4 4.6L3.6 8.4 12 3.7Z"/><path d="m4.5 12.1-.9.5 8.4 4.6 8.4-4.6-.9-.5M4.5 15.8l-.9.5 8.4 4.6 8.4-4.6-.9-.5"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3.5c.4 4.1 2.4 6.1 6.5 6.5-4.1.4-6.1 2.4-6.5 6.5-.4-4.1-2.4-6.1-6.5-6.5 4.1-.4 6.1-2.4 6.5-6.5Z"/><path d="M18.5 15.5c.2 1.8 1.1 2.8 3 3-1.9.2-2.8 1.2-3 3-.2-1.8-1.1-2.8-3-3 1.9-.2 2.8-1.2 3-3Z"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path d="m12 2.8 8.2 4.6v9.2L12 21.2l-8.2-4.6V7.4L12 2.8Z"/><path d="m3.8 7.4 8.2 4.7 8.2-4.7M12 12.1v9.1"/></symbol>
+    <symbol id="i-sphere" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M3.8 9.2c3.8 2.2 12.6 2.2 16.4 0M4.6 16.1c3.3-2 11.5-2 14.8 0"/><path d="M12 3.4c-3.6 3.4-3.6 13.8 0 17.2 3.6-3.4 3.6-13.8 0-17.2Z"/></symbol>
+    <symbol id="i-cylinder" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7.2" ry="3.1"/><path d="M4.8 6v12c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1V6"/><path d="M4.8 12c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1"/></symbol>
+    <symbol id="i-plane" viewBox="0 0 24 24"><path d="M3.2 16.8 12 3.5l8.8 13.3-8.8 4.4-8.8-4.4Z"/><path d="m3.2 16.8 8.8-1.7 8.8 1.7M12 15.1v6.1"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.1"/><path d="M12 2.4v2.1M12 19.5v2.1M4.2 4.2l1.5 1.5M18.3 18.3l1.5 1.5M2.4 12h2.1M19.5 12h2.1M4.2 19.8l1.5-1.5M18.3 5.7l1.5-1.5"/></symbol>
+    <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M19.8 8.2A8.4 8.4 0 1 0 20 15"/><path d="M20 4.2v4.4h-4.4"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4.2 8.2A8.4 8.4 0 1 1 4 15"/><path d="M4 4.2v4.4h4.4"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.2" y="8.2" width="11.6" height="11.6" rx="2"/><path d="M15.8 8.2V6.2a2 2 0 0 0-2-2H6.2a2 2 0 0 0-2 2v7.6a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 3.5h5l.8 3.5H8.7l.8-3.5ZM6.4 7l.8 12.1a1.5 1.5 0 0 0 1.5 1.4h6.6a1.5 1.5 0 0 0 1.5-1.4L17.6 7"/><path d="M10 11v5.5M14 11v5.5"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5m0 0-5 5m5-5 5 5"/></symbol>
+    <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14m0 0 5-5m-5 5-5-5"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14m0 0-5-5m5 5-5 5"/></symbol>
+    <symbol id="i-arrow-downline" viewBox="0 0 24 24"><path d="M12 5v14m0 0-5-5m5 5 5-5"/></symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12.2 3.5a8.7 8.7 0 1 0 0 17.4h1.1a1.9 1.9 0 0 0 1.1-3.4 1.9 1.9 0 0 1 1.1-3.4h2.6a2.4 2.4 0 0 0 2.4-2.4c0-4.5-3.7-8.2-8.3-8.2Z"/><circle cx="7.4" cy="9.1" r=".9" fill="currentColor" stroke="none"/><circle cx="10.4" cy="6.4" r=".9" fill="currentColor" stroke="none"/><circle cx="14.5" cy="6.8" r=".9" fill="currentColor" stroke="none"/><circle cx="7.3" cy="13.5" r=".9" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m4.5 12.5 5 5 10-11"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.3M12 16.7h.01"/></symbol>
+    <symbol id="i-mouse" viewBox="0 0 24 24"><rect x="6.5" y="3" width="11" height="18" rx="5.5"/><path d="M12 6.5v4"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.3" y="4.4" width="17.4" height="15.2" rx="2.2"/><circle cx="8.4" cy="9.4" r="1.5"/><path d="m4.5 17 4.8-4.5 3.5 3.2 2.6-2.2 4.4 4.1"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M8.8 7.2 4.2 11.8l4.6 4.6"/><path d="M4.6 11.8h9a5.6 5.6 0 0 1 5.6 5.6v1.1"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M3.5 9.2h17M3.5 14.8h17M9.2 3.5v17M14.8 3.5v17"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-brush" viewBox="0 0 24 24"><path d="m14.4 5.2 4.4 4.4M4 20c3.2.2 5.3-.6 6.4-2.2 1.2-1.7.7-3.8-1.3-4.3-2.3-.5-3.9 1.5-3.9 3.4 0 1.2-.5 2.1-1.2 3.1Z"/><path d="M12 12 19 5a1.8 1.8 0 0 0-2.5-2.5L9.5 9.5"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 2.8h8l4 4v14.4H6V2.8Z"/><path d="M14 2.8v4h4M9 12h6M9 15.5h6"/></symbol>
+    <symbol id="i-crop" viewBox="0 0 24 24"><path d="M6 2.8v15.2h15.2M2.8 6h15.2v15.2"/></symbol>
+  </svg>
+
+  <div class="app-noise" aria-hidden="true"></div>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar__brand">
+        <a class="brand" href="./" aria-label="RampForge, inicio">
+          <span class="brand__mark" aria-hidden="true">
+            <i></i><i></i><i></i><i></i>
+          </span>
+          <span class="brand__name">RAMP<span>FORGE</span></span>
+          <span class="brand__edition">ATLAS STUDIO</span>
+        </a>
+        <span class="topbar__divider" aria-hidden="true"></span>
+        <label class="project-identity">
+          <span class="project-identity__label">PROYECTO</span>
+          <span class="project-identity__field">
+            <input id="project-name" type="text" value="Paleta de Estudio" maxlength="64" autocomplete="off" spellcheck="false" aria-label="Nombre del proyecto">
+            <svg class="icon icon--mini" aria-hidden="true"><use href="#i-brush"></use></svg>
+          </span>
+        </label>
+      </div>
+
+      <div class="topbar__meta">
+        <div class="save-state" id="save-state">
+          <span class="save-state__dot"></span>
+          <span id="save-label">Guardado local</span>
+        </div>
+        <span class="key-hint"><kbd>Ctrl</kbd><kbd>S</kbd></span>
+      </div>
+
+      <div class="topbar__actions">
+        <button class="icon-btn mobile-only" id="btn-mobile-library" type="button" aria-label="Abrir panel de rampas" title="Rampas">
+          <svg class="icon" aria-hidden="true"><use href="#i-layers"></use></svg>
+        </button>
+        <button class="btn btn--ghost" id="btn-import" type="button" title="Cargar proyecto JSON">
+          <svg class="icon" aria-hidden="true"><use href="#i-upload"></use></svg>
+          <span class="btn__label">Cargar</span>
+        </button>
+        <button class="btn btn--ghost" id="btn-save" type="button" title="Guardar proyecto JSON (Ctrl+S)">
+          <svg class="icon" aria-hidden="true"><use href="#i-save"></use></svg>
+          <span class="btn__label">Guardar</span>
+        </button>
+        <button class="btn btn--primary" id="btn-export" type="button" title="Exportar atlas PNG">
+          <svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg>
+          <span class="btn__label">Exportar PNG</span>
+        </button>
+        <button class="icon-btn mobile-only" id="btn-mobile-inspector" type="button" aria-label="Abrir inspector" title="Inspector">
+          <svg class="icon" aria-hidden="true"><use href="#i-sliders"></use></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="app-body">
+      <aside class="panel library-panel" id="library-panel" aria-label="Rampas y configuración del atlas">
+        <div class="panel__head">
+          <div>
+            <span class="eyebrow">CONFIGURACIÓN</span>
+            <h2>Atlas</h2>
+          </div>
+          <button class="icon-btn drawer-close" type="button" data-close-drawer aria-label="Cerrar panel">
+            <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
+          </button>
+        </div>
+
+        <div class="panel__scroll">
+          <section class="side-section">
+            <div class="side-section__title">
+              <h3>Lienzo</h3>
+              <span class="micro-tag">SQUARE</span>
+            </div>
+            <div class="size-switcher" id="size-switcher" role="group" aria-label="Tamaño del atlas">
+              <button type="button" data-size="256">256<small>²</small></button>
+              <button type="button" data-size="512">512<small>²</small></button>
+              <button type="button" data-size="1024" class="is-active">1024<small>²</small></button>
+              <button type="button" data-size="2048">2048<small>²</small></button>
+            </div>
+            <div class="columns-control">
+              <div class="columns-control__head">
+                <span class="columns-control__label">Columnas</span>
+                <span class="micro-tag" id="columns-active">2 ACTIVAS</span>
+              </div>
+              <div class="segmented columns-switcher" id="columns-switcher" role="group" aria-label="Número de columnas del atlas">
+                <button type="button" data-columns="1" aria-pressed="false" title="Una columna, bandas a ancho completo">1</button>
+                <button type="button" data-columns="2" class="is-active" aria-pressed="true" title="Dos columnas con alturas independientes">2</button>
+                <button type="button" data-columns="3" aria-pressed="false" title="Tres columnas con alturas independientes">3</button>
+                <button type="button" data-columns="4" aria-pressed="false" title="Cuatro columnas con alturas independientes">4</button>
+              </div>
+              <p class="columns-control__hint" id="columns-hint">Pilas independientes. Cada columna reparte sus propias alturas.</p>
+            </div>
+            <dl class="atlas-facts">
+              <div>
+                <dt>Resolución</dt>
+                <dd id="fact-resolution">1024 × 1024</dd>
+              </div>
+              <div>
+                <dt>Formato</dt>
+                <dd>PNG <span class="dot-separator">·</span> sRGB</dd>
+              </div>
+              <div>
+                <dt>Memoria</dt>
+                <dd id="fact-size">~4.0 MB</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="side-section ramps-section">
+            <div class="side-section__title">
+              <div class="title-with-count">
+                <h3>Rampas</h3>
+                <span class="count-badge" id="ramp-count">0</span>
+              </div>
+              <button class="icon-btn icon-btn--accent" id="btn-add-ramp" type="button" title="Añadir rampa">
+                <svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg>
+              </button>
+            </div>
+            <p class="side-section__hint">Arrastra para ordenar · ajusta alturas en el inspector.</p>
+            <div class="ramp-list" id="ramp-list" role="list"></div>
+            <div class="empty-library" id="empty-library" hidden>
+              <span class="empty-library__icon"><svg class="icon" aria-hidden="true"><use href="#i-layers"></use></svg></span>
+              <strong>Aún no hay rampas</strong>
+              <span>Añade tu primera franja de degradado.</span>
+            </div>
+            <button class="template-card" id="btn-open-presets" type="button">
+              <span class="template-card__art" aria-hidden="true">
+                <i></i><i></i><i></i>
+              </span>
+              <span class="template-card__copy">
+                <span class="eyebrow">BIBLIOTECA</span>
+                <strong>Plantillas de materiales</strong>
+                <small>Madera, metales, cristal y más</small>
+              </span>
+              <span class="template-card__arrow">
+                <svg class="icon" aria-hidden="true"><use href="#i-arrow-right"></use></svg>
+              </span>
+            </button>
+          </section>
+        </div>
+
+        <div class="panel__foot">
+          <div class="autosave-note">
+            <span class="status-led"></span>
+            <span>Proyecto guardado en este navegador</span>
+          </div>
+          <button class="text-button text-button--muted" id="btn-reset-project" type="button" title="Restaurar proyecto de demostración">Restaurar demo</button>
+        </div>
+      </aside>
+
+      <main class="studio" aria-label="Área de trabajo">
+        <section class="card viewer-card" aria-labelledby="viewer-title">
+          <header class="card-toolbar viewer-toolbar">
+            <div class="mesh-tabs" role="tablist" aria-label="Malla de prueba" id="mesh-tabs">
+              <button type="button" class="mesh-tab is-active" data-mesh="cube" role="tab" aria-selected="true" title="Cubo biselado">
+                <svg class="icon" aria-hidden="true"><use href="#i-cube"></use></svg><span>Cubo</span>
+              </button>
+              <button type="button" class="mesh-tab" data-mesh="sphere" role="tab" aria-selected="false" title="Esfera">
+                <svg class="icon" aria-hidden="true"><use href="#i-sphere"></use></svg><span>Esfera</span>
+              </button>
+              <button type="button" class="mesh-tab" data-mesh="cylinder" role="tab" aria-selected="false" title="Cilindro">
+                <svg class="icon" aria-hidden="true"><use href="#i-cylinder"></use></svg><span>Cilindro</span>
+              </button>
+              <button type="button" class="mesh-tab" data-mesh="plane" role="tab" aria-selected="false" title="Malla plana">
+                <svg class="icon" aria-hidden="true"><use href="#i-plane"></use></svg><span>Plano</span>
+              </button>
+            </div>
+
+            <div class="viewer-toolbar__actions">
+              <div class="segmented segmented--compact" id="shading-switcher" role="group" aria-label="Tipo de sombreado">
+                <button type="button" data-shading="pbr" class="is-active" title="Sombreado PBR">PBR</button>
+                <button type="button" data-shading="toon" title="Sombreado cel-shading">Toon</button>
+              </div>
+              <span class="toolbar-separator" aria-hidden="true"></span>
+              <button class="icon-btn" id="btn-autorotate" type="button" title="Rotación automática" aria-pressed="false">
+                <svg class="icon" aria-hidden="true"><use href="#i-rotate"></use></svg>
+              </button>
+              <button class="icon-btn" id="btn-reset-view" type="button" title="Restablecer cámara">
+                <svg class="icon" aria-hidden="true"><use href="#i-reset"></use></svg>
+              </button>
+            </div>
+          </header>
+
+          <div class="viewport" id="viewport">
+            <canvas id="three-canvas" aria-label="Vista previa 3D interactiva del atlas"></canvas>
+            <div class="viewport__wash" aria-hidden="true"></div>
+            <div class="viewport__grid" aria-hidden="true"></div>
+
+            <div class="viewport__badge">
+              <span class="live-dot"></span>
+              <span>LIVE PREVIEW</span>
+            </div>
+
+            <div class="viewport__uv-pill" id="viewport-uv-pill" aria-live="polite" title="Región del atlas muestreada por los UV del objeto">
+              <span class="viewport__uv-icon"><svg class="icon" aria-hidden="true"><use href="#i-crop"></use></svg></span>
+              <span class="viewport__uv-copy">
+                <span class="eyebrow">UV MAP</span>
+                <strong id="viewport-uv-label">Rampa activa</strong>
+              </span>
+            </div>
+
+            <div class="viewport__caption">
+              <span class="eyebrow">MALLA DE PRUEBA</span>
+              <strong id="current-mesh-label">Cubo biselado</strong>
+            </div>
+
+            <div class="orbit-hint" id="orbit-hint">
+              <svg class="icon" aria-hidden="true"><use href="#i-mouse"></use></svg>
+              <span>Arrastra para orbitar · scroll para zoom</span>
+            </div>
+
+            <div class="viewer-loader" id="viewer-loader">
+              <span class="loader-orbit" aria-hidden="true"></span>
+              <span>Preparando visor 3D</span>
+            </div>
+
+            <div class="webgl-fallback" id="webgl-fallback" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-alert"></use></svg>
+              <strong>El visor 3D no está disponible</strong>
+              <p>Activa WebGL en tu navegador para previsualizar el atlas sobre las mallas.</p>
+            </div>
+          </div>
+
+          <footer class="light-strip">
+            <div class="light-strip__title">
+              <span class="light-strip__icon"><svg class="icon" aria-hidden="true"><use href="#i-sun"></use></svg></span>
+              <div>
+                <span class="eyebrow">ILUMINACIÓN</span>
+                <strong>Luz de estudio</strong>
+              </div>
+            </div>
+            <label class="mini-range">
+              <span class="mini-range__head"><span>Intensidad</span><output id="light-intensity-value">3.2</output></span>
+              <input class="range" id="light-intensity" type="range" min="0" max="8" step="0.1" value="3.2">
+            </label>
+            <label class="mini-range">
+              <span class="mini-range__head"><span>Dirección</span><output id="light-azimuth-value">-35°</output></span>
+              <input class="range" id="light-azimuth" type="range" min="-180" max="180" step="1" value="-35">
+            </label>
+            <label class="mini-range">
+              <span class="mini-range__head"><span>Altura</span><output id="light-elevation-value">48°</output></span>
+              <input class="range" id="light-elevation" type="range" min="5" max="85" step="1" value="48">
+            </label>
+            <button class="icon-btn light-strip__reset" id="btn-reset-light" type="button" title="Restablecer iluminación">
+              <svg class="icon" aria-hidden="true"><use href="#i-reset"></use></svg>
+            </button>
+          </footer>
+        </section>
+
+        <section class="card atlas-card" aria-labelledby="atlas-title">
+          <header class="card-toolbar atlas-toolbar">
+            <div class="card-title-group">
+              <span class="card-icon"><svg class="icon" aria-hidden="true"><use href="#i-grid"></use></svg></span>
+              <div>
+                <h2 id="atlas-title">Atlas generado</h2>
+                <p id="atlas-card-meta">1024 × 1024 px · 6 rampas</p>
+              </div>
+            </div>
+            <div class="atlas-toolbar__actions">
+              <div class="uv-control" aria-label="Región UV del objeto en el visor 3D">
+                <span class="uv-control__label" title="Región del atlas mapeada en los UV del objeto">
+                  <svg class="icon" aria-hidden="true"><use href="#i-crop"></use></svg>
+                  <span>UV</span>
+                </span>
+                <div class="segmented segmented--uv" id="uv-mode-switcher" role="group" aria-label="Región UV del objeto">
+                  <button type="button" data-uv-mode="full" aria-pressed="false" title="Mapear todo el atlas sobre el objeto">Atlas</button>
+                  <button type="button" data-uv-mode="ramp" class="is-active" aria-pressed="true" title="Mapear la banda de la rampa activa sobre el objeto">Rampa</button>
+                  <button type="button" data-uv-mode="custom" aria-pressed="false" title="Dibuja una región rectangular sobre el atlas para mapearla al objeto">Libre</button>
+                </div>
+              </div>
+              <span class="tag" id="atlas-size-tag">1024²</span>
+              <button class="icon-btn" id="btn-expand-atlas" type="button" title="Ampliar atlas y editar la región UV">
+                <svg class="icon" aria-hidden="true"><use href="#i-expand"></use></svg>
+              </button>
+            </div>
+          </header>
+
+          <div class="atlas-body">
+            <div class="atlas-visual" id="atlas-visual" data-uv-host>
+              <div class="atlas-checker" aria-hidden="true"></div>
+              <canvas id="atlas-canvas" width="1024" height="1024" aria-label="Vista previa 2D del atlas de degradados"></canvas>
+              <span class="atlas-corner-tag" id="atlas-corner-tag">1024 × 1024</span>
+              <div class="atlas-empty" id="atlas-empty" hidden>
+                <svg class="icon" aria-hidden="true"><use href="#i-image"></use></svg>
+                <span>Sin rampas todavía</span>
+              </div>
+              <div class="uv-region-overlay" data-uv-overlay hidden aria-label="Región UV sobre el atlas">
+                <div class="uv-selection" data-uv-selection>
+                  <span class="uv-selection__label">UV</span>
+                  <span class="uv-handle uv-handle--nw" data-uv-handle="nw"></span>
+                  <span class="uv-handle uv-handle--ne" data-uv-handle="ne"></span>
+                  <span class="uv-handle uv-handle--sw" data-uv-handle="sw"></span>
+                  <span class="uv-handle uv-handle--se" data-uv-handle="se"></span>
+                </div>
+                <span class="uv-region-overlay__hint">Arrastra para redibujar · esquinas para ajustar</span>
+              </div>
+              <button class="atlas-hover-action" id="btn-expand-atlas-2" type="button" title="Ampliar atlas y editar la región UV">
+                <svg class="icon" aria-hidden="true"><use href="#i-expand"></use></svg>
+              </button>
+            </div>
+
+            <div class="atlas-info">
+              <span class="eyebrow">TEXTURA FINAL</span>
+              <h3>Lista para tu pipeline.</h3>
+              <p class="atlas-info__description">Color, curvas y ajustes de paleta aplanados en una sola textura sRGB de alta precisión.</p>
+              <div class="atlas-stats" id="atlas-stats">
+                <div><span>Rampas</span><strong id="stat-ramps">6</strong></div>
+                <div><span>Resolución</span><strong id="stat-resolution">1024²</strong></div>
+                <div><span>Formato</span><strong>PNG</strong></div>
+              </div>
+              <div class="atlas-actions">
+                <button class="btn btn--primary btn--small" id="btn-export-atlas" type="button">
+                  <svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg>
+                  Descargar PNG
+                </button>
+                <button class="btn btn--ghost btn--small" id="btn-save-project-atlas" type="button">
+                  <svg class="icon" aria-hidden="true"><use href="#i-save"></use></svg>
+                  Guardar .json
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <aside class="panel inspector-panel" id="inspector-panel" aria-label="Inspector de rampa y ajustes globales">
+        <div class="panel__head inspector-head">
+          <div>
+            <span class="eyebrow">EDICIÓN</span>
+            <h2>Inspector</h2>
+          </div>
+          <button class="icon-btn drawer-close" type="button" data-close-drawer aria-label="Cerrar inspector">
+            <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
+          </button>
+        </div>
+
+        <div class="inspector-tabs" role="tablist" aria-label="Secciones del inspector">
+          <button type="button" class="inspector-tab is-active" data-tab="ramp" role="tab" aria-selected="true">
+            <svg class="icon" aria-hidden="true"><use href="#i-layers"></use></svg>
+            Rampa
+          </button>
+          <button type="button" class="inspector-tab" data-tab="global" role="tab" aria-selected="false">
+            <svg class="icon" aria-hidden="true"><use href="#i-sliders"></use></svg>
+            Ajustes globales
+            <span class="tab-indicator" id="global-indicator" hidden></span>
+          </button>
+        </div>
+
+        <div class="panel__scroll inspector-scroll" id="inspector-scroll">
+          <div id="inspector-content"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
+  <div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="false"></div>
+
+  <dialog class="modal preset-modal" id="preset-modal" aria-labelledby="preset-modal-title">
+    <div class="modal__frame">
+      <header class="modal__head">
+        <div class="modal__title">
+          <span class="modal__icon"><svg class="icon" aria-hidden="true"><use href="#i-sparkles"></use></svg></span>
+          <div>
+            <span class="eyebrow">BIBLIOTECA DE MATERIALES</span>
+            <h2 id="preset-modal-title">Plantillas de degradado</h2>
+            <p id="preset-modal-subtitle">Aplica un look a la rampa seleccionada.</p>
+          </div>
+        </div>
+        <button class="icon-btn" type="button" data-close-dialog aria-label="Cerrar biblioteca">
+          <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
+        </button>
+      </header>
+      <div class="preset-toolbar">
+        <div class="filter-chips" id="preset-filters" role="group" aria-label="Filtrar plantillas"></div>
+        <span class="preset-count" id="preset-count"></span>
+      </div>
+      <div class="preset-grid" id="preset-grid"></div>
+      <footer class="modal__foot">
+        <span><svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg> Se conservan el nombre, la dirección y la altura de tu rampa.</span>
+        <button class="btn btn--ghost btn--small" type="button" data-close-dialog>Cancelar</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <dialog class="modal atlas-modal" id="atlas-modal" aria-labelledby="atlas-modal-title">
+    <div class="modal__frame modal__frame--atlas">
+      <header class="modal__head">
+        <div class="modal__title">
+          <span class="modal__icon"><svg class="icon" aria-hidden="true"><use href="#i-grid"></use></svg></span>
+          <div>
+            <span class="eyebrow">INSPECCIÓN DE TEXTURA</span>
+            <h2 id="atlas-modal-title">Atlas a tamaño completo</h2>
+            <p id="atlas-modal-meta">1024 × 1024 px</p>
+          </div>
+        </div>
+        <div class="modal__head-actions">
+          <div class="uv-control uv-control--modal" aria-label="Región UV del objeto en el visor 3D">
+            <span class="uv-control__label">
+              <svg class="icon" aria-hidden="true"><use href="#i-crop"></use></svg>
+              <span>UV</span>
+            </span>
+            <div class="segmented segmented--uv" role="group" aria-label="Región UV del objeto">
+              <button type="button" data-uv-mode="full" aria-pressed="false" title="Mapear todo el atlas sobre el objeto">Atlas</button>
+              <button type="button" data-uv-mode="ramp" class="is-active" aria-pressed="true" title="Mapear la banda de la rampa activa sobre el objeto">Rampa</button>
+              <button type="button" data-uv-mode="custom" aria-pressed="false" title="Dibuja una región rectangular sobre el atlas para mapearla al objeto">Libre</button>
+            </div>
+          </div>
+          <button class="btn btn--primary btn--small" id="btn-export-atlas-modal" type="button">
+            <svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg>
+            Descargar PNG
+          </button>
+          <button class="icon-btn" type="button" data-close-dialog aria-label="Cerrar atlas">
+            <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
+          </button>
+        </div>
+      </header>
+      <div class="atlas-modal__stage">
+        <div class="atlas-modal__canvas-wrap" data-uv-host>
+          <canvas id="atlas-modal-canvas" width="1024" height="1024" aria-label="Vista ampliada del atlas"></canvas>
+          <div class="uv-region-overlay" data-uv-overlay hidden aria-label="Región UV sobre el atlas ampliado">
+            <div class="uv-selection" data-uv-selection>
+              <span class="uv-selection__label">UV</span>
+              <span class="uv-handle uv-handle--nw" data-uv-handle="nw"></span>
+              <span class="uv-handle uv-handle--ne" data-uv-handle="ne"></span>
+              <span class="uv-handle uv-handle--sw" data-uv-handle="sw"></span>
+              <span class="uv-handle uv-handle--se" data-uv-handle="se"></span>
+            </div>
+            <span class="uv-region-overlay__hint">Arrastra para redibujar · esquinas para ajustar</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <input id="import-file" type="file" accept="application/json,.json" hidden>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
