@@ -48,7 +48,7 @@ Cada push a `main` vuelve a publicar el sitio automáticamente. `start.cmd` y `s
 ## Idioma
 
 - El botón **ES / EN** de la cabecera alterna entre español e inglés sin recargar la página.
-- Al arrancar, la app usa el idioma guardado en `localStorage` (`rampforge.language`); si no existe, toma el idioma del navegador y cae en español como último recurso.
+- Al arrancar, la app usa el idioma guardado en `localStorage` (`rampforge.language`). Si no existe, usa **inglés por defecto**, independientemente del idioma del navegador.
 - Los textos generados (nombre del proyecto demo, rampas nuevas, plantillas) se crean en el idioma activo. Los nombres de proyecto y de rampa escritos por el usuario se conservan tal cual.
 - Las rampas que mantienen el nombre de un preset integrado se traducen automáticamente al cambiar de idioma. Los presets guardados por el usuario conservan su nombre y descripción originales.
 - La preferencia de idioma es independiente del proyecto JSON y del autoguardado; los archivos guardados no incluyen ajustes de idioma.

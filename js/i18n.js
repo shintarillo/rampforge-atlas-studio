@@ -416,10 +416,7 @@ function detectInitialLanguage() {
   } catch {
     // Private browsing or storage disabled.
   }
-  const browserLanguage = (navigator.languages?.[0] || navigator.language || "es")
-    .toLowerCase()
-    .split("-")[0];
-  return browserLanguage === "en" ? "en" : "es";
+  return "en";
 }
 
 function interpolate(template, params) {
