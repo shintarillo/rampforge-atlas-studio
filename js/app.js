@@ -27,6 +27,13 @@ import {
 } from "./project.js";
 import { PRESET_CATEGORIES, RAMPS_PRESETS, getPreset } from "./presets.js";
 import {
+  CUSTOM_PRESET_CATEGORY,
+  MAX_USER_PRESETS,
+  createUserPreset,
+  loadUserPresets,
+  persistUserPresets,
+} from "./user-presets.js";
+import {
   MAX_ATLAS_COLUMNS,
   createPbrMaskData,
   getBandHeightForStrip,
@@ -43,6 +50,7 @@ import {
   applyTranslations,
   getLanguage,
   getLocale,
+  getPresetNameVariants,
   initLanguage,
   t,
   tPlural,
@@ -123,7 +131,14 @@ const els = {
   presetFilters: $("#preset-filters"),
   presetGrid: $("#preset-grid"),
   presetCount: $("#preset-count"),
+  presetStatus: $("#preset-status"),
   presetSubtitle: $("#preset-modal-subtitle"),
+  presetSavebar: $("#preset-savebar"),
+  presetNameInput: $("#preset-name-input"),
+  presetDescriptionInput: $("#preset-description-input"),
+  btnSaveCurrentPreset: $("#btn-save-current-preset"),
+  btnConfirmSavePreset: $("#btn-confirm-save-preset"),
+  btnCancelSavePreset: $("#btn-cancel-save-preset"),
   atlasModal: $("#atlas-modal"),
   atlasModalMeta: $("#atlas-modal-meta"),
   atlasModalCanvas: $("#atlas-modal-canvas"),
@@ -147,6 +162,7 @@ const appState = {
   inspectorTab: "ramp",
   inspectorScrollPositions: { ramp: 0, pbr: 0, global: 0 },
   presetCategory: "Todos",
+  userPresets: [],
   mesh: "cube",
   shading: "pbr",
   autoRotate: false,
@@ -172,6 +188,7 @@ const appState = {
 let viewer = null;
 let pbrMaskCanvas = null;
 let toastId = 0;
+let presetStatusTimer = null;
 
 const MESH_LABEL_KEYS = {
   cube: "viewer.meshCubeTitle",
@@ -253,6 +270,7 @@ function commitProjectName(value, { save = true } = {}) {
 
 function setProject(project, { selectFirst = true, save = true } = {}) {
   appState.project = normalizeProject(project);
+  const presetNamesChanged = localizePresetRampNames();
   appState.inspectorTab = "ramp";
   appState.uvMode = "ramp";
   appState.uvCustom = null;
@@ -266,7 +284,7 @@ function setProject(project, { selectFirst = true, save = true } = {}) {
   }
   ensureSelections();
   renderAll();
-  if (save) queueAutosave();
+  if (save || presetNamesChanged) queueAutosave();
 }
 
 /* =========================================================
@@ -979,7 +997,7 @@ function rampTabMarkup(strip) {
           <span class="ramp-preset-cta__icon">${icon("sparkles")}</span>
           <span>
             <strong>${t("ramp.templates")}</strong>
-            <small>${t("ramp.templatesSubtitle", { count: RAMPS_PRESETS.length })}</small>
+            <small>${t("ramp.templatesSubtitle", { count: getAllPresets().length })}</small>
           </span>
         </span>
         ${icon("chevron-right")}
@@ -1442,8 +1460,10 @@ function updateLanguageButton() {
 }
 
 function refreshLanguageUi() {
+  const presetNamesChanged = localizePresetRampNames();
   applyTranslations(document);
   updateLanguageButton();
+  clearPresetStatus();
   if (els.metaDescription) els.metaDescription.content = t("app.metaDescription");
   document.title = `RampForge — ${appState.project.name}`;
   renderRampList();
@@ -1458,7 +1478,16 @@ function refreshLanguageUi() {
     els.presetModal.querySelector("#preset-modal-title").textContent = t("presets.title");
     updatePresetSubtitle();
     renderPresetGallery();
+    if (!els.presetSavebar.hidden) {
+      const strip = activeStrip();
+      const seed = els.presetNameInput.dataset.seed;
+      if (strip && seed && els.presetNameInput.value === seed) {
+        els.presetNameInput.value = strip.name;
+        els.presetNameInput.dataset.seed = strip.name;
+      }
+    }
   }
+  if (presetNamesChanged) queueAutosave();
 }
 
 function updatePresetSubtitle() {
@@ -1634,8 +1663,140 @@ function reorderStopsByPosition() {
   strip.stops.sort((a, b) => a.pos - b.pos);
 }
 
+function getAllPresets() {
+  return [...RAMPS_PRESETS, ...appState.userPresets];
+}
+
+function findPresetById(id) {
+  return getPreset(id) || appState.userPresets.find((preset) => preset.id === id) || null;
+}
+
+function presetCategories() {
+  return appState.userPresets.length
+    ? [...PRESET_CATEGORIES, CUSTOM_PRESET_CATEGORY]
+    : PRESET_CATEGORIES;
+}
+
+function localizePresetRampNames() {
+  let changed = false;
+  for (const strip of appState.project?.strips || []) {
+    const preset = RAMPS_PRESETS.find((item) => (
+      getPresetNameVariants(item.id).includes(strip.name) || item.name === strip.name
+    ));
+    if (!preset) continue;
+    const localized = translatePreset(preset).name;
+    if (strip.name !== localized) {
+      strip.name = localized;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function showPresetStatus(message, tone = "success") {
+  if (!els.presetStatus) return;
+  window.clearTimeout(presetStatusTimer);
+  els.presetStatus.textContent = message;
+  els.presetStatus.dataset.tone = tone;
+  presetStatusTimer = window.setTimeout(() => {
+    els.presetStatus.textContent = "";
+    delete els.presetStatus.dataset.tone;
+  }, 3800);
+}
+
+function clearPresetStatus() {
+  window.clearTimeout(presetStatusTimer);
+  if (!els.presetStatus) return;
+  els.presetStatus.textContent = "";
+  delete els.presetStatus.dataset.tone;
+}
+
+function hidePresetSavePanel() {
+  if (!els.presetSavebar) return;
+  els.presetSavebar.hidden = true;
+  if (els.btnSaveCurrentPreset) els.btnSaveCurrentPreset.disabled = false;
+  if (els.presetNameInput) {
+    els.presetNameInput.value = "";
+    delete els.presetNameInput.dataset.seed;
+  }
+  if (els.presetDescriptionInput) els.presetDescriptionInput.value = "";
+}
+
+function openPresetSavePanel() {
+  const strip = activeStrip();
+  if (!strip) {
+    showPresetStatus(t("presets.noRampMessage"), "error");
+    return;
+  }
+  if (appState.userPresets.length >= MAX_USER_PRESETS) {
+    showPresetStatus(t("presets.limitReached"), "error");
+    return;
+  }
+  applyTranslations(els.presetSavebar);
+  els.presetSavebar.hidden = false;
+  els.btnSaveCurrentPreset.disabled = true;
+  els.presetNameInput.value = strip.name;
+  els.presetNameInput.dataset.seed = strip.name;
+  els.presetDescriptionInput.value = "";
+  window.requestAnimationFrame(() => {
+    els.presetNameInput.focus();
+    els.presetNameInput.select();
+  });
+}
+
+function saveCurrentRampAsPreset() {
+  const strip = activeStrip();
+  if (!strip) {
+    showPresetStatus(t("presets.noRampMessage"), "error");
+    return;
+  }
+  if (appState.userPresets.length >= MAX_USER_PRESETS) {
+    showPresetStatus(t("presets.limitReached"), "error");
+    return;
+  }
+  const name = (els.presetNameInput.value.trim() || strip.name || t("presets.customUntitled")).slice(0, 48);
+  const description = els.presetDescriptionInput.value.trim() || t("presets.customDefaultDescription");
+  const preset = createUserPreset(strip, { name, description });
+  if (!preset) {
+    showPresetStatus(t("presets.storageError"), "error");
+    return;
+  }
+  const nextPresets = [...appState.userPresets, preset];
+  if (!persistUserPresets(nextPresets)) {
+    showPresetStatus(t("presets.storageError"), "error");
+    return;
+  }
+  appState.userPresets = nextPresets;
+  appState.presetCategory = CUSTOM_PRESET_CATEGORY;
+  hidePresetSavePanel();
+  renderPresetGallery();
+  renderInspector({ preserveScroll: true });
+  els.presetGrid.scrollTop = els.presetGrid.scrollHeight;
+  const newCard = $$("[data-preset]", els.presetGrid).find((card) => card.dataset.preset === preset.id);
+  newCard?.focus();
+  showPresetStatus(t("presets.savedInline", { name: preset.name }));
+}
+
+function deleteUserPreset(presetId) {
+  const preset = appState.userPresets.find((item) => item.id === presetId);
+  if (!preset) return;
+  if (!window.confirm(t("presets.deleteConfirm", { name: preset.name }))) return;
+  const nextPresets = appState.userPresets.filter((item) => item.id !== presetId);
+  if (!persistUserPresets(nextPresets)) {
+    showPresetStatus(t("presets.storageError"), "error");
+    return;
+  }
+  appState.userPresets = nextPresets;
+  if (appState.presetCategory === CUSTOM_PRESET_CATEGORY && nextPresets.length === 0) {
+    appState.presetCategory = "Todos";
+  }
+  renderPresetGallery();
+  renderInspector({ preserveScroll: true });
+  showPresetStatus(t("presets.deletedInline", { name: preset.name }));
+}
+
 function applyPresetToStrip(presetId) {
-  const preset = getPreset(presetId);
+  const preset = findPresetById(presetId);
   const project = appState.project;
   const strip = activeStrip();
   if (!preset || !strip) {
@@ -1652,7 +1813,7 @@ function applyPresetToStrip(presetId) {
     name: strip.name,
     orientation: strip.orientation,
     weight: strip.weight,
-    pbr: strip.pbr,
+    pbr: preset.pbr || strip.pbr,
     emissionScale: project.emissionScale,
   });
   project.strips[index] = applied;
@@ -1803,8 +1964,10 @@ function openPresetModal() {
     return;
   }
   if (window.matchMedia("(max-width: 1120px)").matches) closeDrawers({ immediate: true });
+  hidePresetSavePanel();
+  clearPresetStatus();
   updatePresetSubtitle();
-  if (!PRESET_CATEGORIES.includes(appState.presetCategory)) {
+  if (!presetCategories().includes(appState.presetCategory)) {
     appState.presetCategory = "Todos";
   }
   renderPresetGallery();
@@ -1812,14 +1975,19 @@ function openPresetModal() {
 }
 
 function renderPresetGallery() {
+  const categories = presetCategories();
+  if (!categories.includes(appState.presetCategory)) {
+    appState.presetCategory = "Todos";
+  }
   const category = appState.presetCategory;
-  const sourcePresets = category === "Todos"
-    ? RAMPS_PRESETS
-    : RAMPS_PRESETS.filter((preset) => preset.category === category);
-  const presets = sourcePresets.map(translatePreset);
+  const sourcePresets = getAllPresets();
+  const filtered = category === "Todos"
+    ? sourcePresets
+    : sourcePresets.filter((preset) => preset.category === category);
+  const presets = filtered.map(translatePreset);
   els.presetFilters.setAttribute("aria-label", t("presets.filterAria"));
 
-  els.presetFilters.innerHTML = PRESET_CATEGORIES.map(
+  els.presetFilters.innerHTML = categories.map(
     (item) =>
       `<button class="filter-chip${item === category ? " is-active" : ""}" type="button" data-category="${escapeHTML(item)}" aria-pressed="${item === category}">${escapeHTML(translatePresetCategory(item))}</button>`,
   ).join("");
@@ -1828,22 +1996,25 @@ function renderPresetGallery() {
   els.presetGrid.innerHTML = presets
     .map(
       (preset) => `
-        <button class="preset-card" type="button" data-preset="${escapeHTML(preset.id)}" title="${escapeHTML(t("presets.applyTitle", { name: preset.name }))}">
-          <span class="preset-card__preview">
-            <canvas width="360" height="96" data-preset-preview="${escapeHTML(preset.id)}"></canvas>
-            <span class="preset-card__action">${icon("plus")}</span>
-          </span>
-          <span class="preset-card__meta">
-            <span class="preset-card__name">${escapeHTML(preset.name)}</span>
-            <span class="preset-card__tag">${escapeHTML(preset.categoryLabel)}</span>
-          </span>
-          <span class="preset-card__description">${escapeHTML(preset.description)}</span>
-        </button>`,
+        <div class="preset-card-wrap">
+          <button class="preset-card" type="button" data-preset="${escapeHTML(preset.id)}" title="${escapeHTML(t("presets.applyTitle", { name: preset.name }))}">
+            <span class="preset-card__preview">
+              <canvas width="360" height="96" data-preset-preview="${escapeHTML(preset.id)}"></canvas>
+              <span class="preset-card__action">${icon("plus")}</span>
+            </span>
+            <span class="preset-card__meta">
+              <span class="preset-card__name">${escapeHTML(preset.name)}</span>
+              <span class="preset-card__tag">${escapeHTML(preset.categoryLabel)}</span>
+            </span>
+            <span class="preset-card__description">${escapeHTML(preset.description)}</span>
+          </button>
+          ${preset.custom ? `<button class="preset-card__delete" type="button" data-delete-preset="${escapeHTML(preset.id)}" title="${escapeHTML(t("presets.deleteNamed", { name: preset.name }))}" aria-label="${escapeHTML(t("presets.deleteNamed", { name: preset.name }))}">${icon("trash")}</button>` : ""}
+        </div>`,
     )
     .join("");
 
   $$("[data-preset-preview]", els.presetGrid).forEach((canvas) => {
-    const preset = getPreset(canvas.dataset.presetPreview);
+    const preset = findPresetById(canvas.dataset.presetPreview);
     if (preset) {
       renderRampToCanvas(canvas, preset, null, { width: 360, height: 96 });
     }
@@ -2286,7 +2457,26 @@ function bindEvents() {
     appState.presetCategory = button.dataset.category;
     renderPresetGallery();
   });
+  els.btnSaveCurrentPreset.addEventListener("click", openPresetSavePanel);
+  els.btnConfirmSavePreset.addEventListener("click", saveCurrentRampAsPreset);
+  els.btnCancelSavePreset.addEventListener("click", hidePresetSavePanel);
+  [els.presetNameInput, els.presetDescriptionInput].forEach((input) => {
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      saveCurrentRampAsPreset();
+    });
+  });
+  els.presetModal.addEventListener("close", () => {
+    hidePresetSavePanel();
+    clearPresetStatus();
+  });
   els.presetGrid.addEventListener("click", (event) => {
+    const deleteButton = event.target.closest("[data-delete-preset]");
+    if (deleteButton) {
+      deleteUserPreset(deleteButton.dataset.deletePreset);
+      return;
+    }
     const card = event.target.closest("[data-preset]");
     if (!card) return;
     applyPresetToStrip(card.dataset.preset);
@@ -2823,9 +3013,11 @@ function init() {
   initLanguage();
   updateLanguageButton();
   if (els.metaDescription) els.metaDescription.content = t("app.metaDescription");
+  appState.userPresets = loadUserPresets();
 
   const saved = readStoredProject();
   appState.project = saved || createDefaultProject();
+  const presetNamesChanged = localizePresetRampNames();
   appState.selectedStripId = appState.project.strips[0]?.id || null;
   appState.selectedStopId =
     interestingStop(appState.project.strips[0])?.id || null;
@@ -2840,12 +3032,13 @@ function init() {
   bootViewer();
   syncRangeFills(document);
   setSavingState({ saving: false });
-  if (!saved) queueAutosave();
+  if (!saved || presetNamesChanged) queueAutosave();
 
   // Expose a tiny, read-only surface for debugging and automated smoke tests.
   Object.defineProperty(window, "RampForge", {
     value: {
       getProject: () => deepClone(appState.project),
+      getUserPresets: () => deepClone(appState.userPresets),
       getState: () => ({
         selectedStripId: appState.selectedStripId,
         selectedStopId: appState.selectedStopId,
@@ -2858,6 +3051,7 @@ function init() {
         pbrChannelView: appState.pbrChannelView,
         uvMode: appState.uvMode,
         uvRegion: appState.uvRegion ? { ...appState.uvRegion } : null,
+        userPresetCount: appState.userPresets.length,
       }),
       getViewerUvRegion: () => viewer?.getUvRegion?.() || null,
       getLayout: () => getBandMetrics(appState.project),

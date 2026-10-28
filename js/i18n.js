@@ -301,12 +301,31 @@ const MESSAGES = {
   "presets.appliedMessage": ["{preset} → {strip}", "{preset} → {strip}"],
   "presets.noRampTitle": ["Selecciona una rampa", "Select a ramp"],
   "presets.noRampMessage": ["Abre o crea una rampa antes de aplicar una plantilla.", "Open or create a ramp before applying a template."],
+  "presets.saveCurrent": ["Guardar rampa actual", "Save current ramp"],
+  "presets.saveCurrentTitle": ["Añadir la rampa actual a la biblioteca", "Add the current ramp to the library"],
+  "presets.saveEyebrow": ["NUEVO PRESET", "NEW PRESET"],
+  "presets.saveTitle": ["Añadir a la biblioteca", "Add to the library"],
+  "presets.saveName": ["Nombre", "Name"],
+  "presets.saveNamePlaceholder": ["Nombre del preset", "Preset name"],
+  "presets.saveDescription": ["Descripción", "Description"],
+  "presets.saveDescriptionPlaceholder": ["Descripción opcional", "Optional description"],
+  "presets.saveConfirm": ["Guardar preset", "Save preset"],
+  "presets.savedInline": ["«{name}» añadido a la biblioteca.", "“{name}” added to the library."],
+  "presets.customDefaultDescription": ["Rampa personal guardada desde el proyecto.", "Custom ramp saved from the project."],
+  "presets.customUntitled": ["Preset personal", "Custom preset"],
+  "presets.limitReached": ["Has alcanzado el límite de presets personalizados.", "You have reached the custom preset limit."],
+  "presets.storageError": ["No se pudo guardar la biblioteca en este navegador.", "The library could not be saved in this browser."],
+  "presets.delete": ["Eliminar preset", "Delete preset"],
+  "presets.deleteNamed": ["Eliminar «{name}»", "Delete “{name}”"],
+  "presets.deleteConfirm": ["¿Eliminar el preset «{name}»? Esta acción no afecta a las rampas del proyecto.", "Delete the preset “{name}”? This does not affect the project ramps."],
+  "presets.deletedInline": ["«{name}» eliminado de la biblioteca.", "“{name}” removed from the library."],
   "presets.categoryAll": ["Todos", "All"],
   "presets.categoryOrganic": ["Orgánico", "Organic"],
   "presets.categoryMetallic": ["Metálico", "Metallic"],
   "presets.categoryMineral": ["Mineral", "Mineral"],
   "presets.categoryFantasy": ["Fantasía", "Fantasy"],
   "presets.categoryStylized": ["Estilizado", "Stylized"],
+  "presets.categoryCustom": ["Personalizados", "Custom"],
 
   "presets.wood-warm.name": ["Madera cálida", "Warm wood"],
   "presets.wood-warm.description": ["Ámbar, corteza y madera cepillada al sol.", "Amber, bark and sun-brushed timber."],
@@ -479,8 +498,14 @@ export function translatePresetCategory(category) {
     Mineral: "presets.categoryMineral",
     Fantasía: "presets.categoryFantasy",
     Estilizado: "presets.categoryStylized",
+    Personalizados: "presets.categoryCustom",
   };
   return t(map[category] || "presets.categoryAll");
+}
+
+export function getPresetNameVariants(id) {
+  const message = MESSAGES[`presets.${id}.name`];
+  return message ? [...new Set(message.filter(Boolean))] : [];
 }
 
 export function translatePreset(preset) {

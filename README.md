@@ -31,6 +31,7 @@ python -m http.server 5173
 - El botón **ES / EN** de la cabecera alterna entre español e inglés sin recargar la página.
 - Al arrancar, la app usa el idioma guardado en `localStorage` (`rampforge.language`); si no existe, toma el idioma del navegador y cae en español como último recurso.
 - Los textos generados (nombre del proyecto demo, rampas nuevas, plantillas) se crean en el idioma activo. Los nombres de proyecto y de rampa escritos por el usuario se conservan tal cual.
+- Las rampas que mantienen el nombre de un preset integrado se traducen automáticamente al cambiar de idioma. Los presets guardados por el usuario conservan su nombre y descripción originales.
 - La preferencia de idioma es independiente del proyecto JSON y del autoguardado; los archivos guardados no incluyen ajustes de idioma.
 
 ## Funciones principales
@@ -84,9 +85,12 @@ python -m http.server 5173
   - [Guía de integración con Godot 4 y shader de ejemplo](./examples/godot/README.md).
 
 - **Plantillas de material**
-  - 17 presets (madera, metales, cristal, cuero, piedra, tela, piel, hielo, neón y estilos Toon).
+  - 17 presets integrados (madera, metales, cristal, cuero, piedra, tela, piel, hielo, neón y estilos Toon).
+  - Nombres, descripciones y categorías se traducen con la interfaz. Las rampas que conservan el nombre de un preset integrado también se traducen al cambiar de idioma; los nombres personalizados se respetan.
+  - **Guardar rampa actual** añade la rampa activa a la biblioteca con su nombre, descripción, paradas, interpolación, curva, pasos y valores PBR.
+  - Los presets personalizados (hasta 80) se guardan en `localStorage` (`rampforge.presets.v1`), aparecen en la categoría **Personalizados** y se pueden eliminar desde su tarjeta.
   - Filtros por categoría y vista previa real de cada degradado.
-  - Aplicación sobre la rampa activa conservando nombre, altura, orientación y parámetros PBR.
+  - Aplicación sobre la rampa activa conservando nombre, altura y orientación. Los presets integrados respetan los parámetros PBR actuales; los personalizados aplican los suyos.
 
 - **Proyecto y exportación**
   - Exportación del atlas de color PNG a la resolución activa.
@@ -102,6 +106,7 @@ python -m http.server 5173
 - **Cargar** está en la cabecera y abre un selector de archivo JSON.
 - La exportación de texturas está en el panel **Atlas generado**: **Color PNG** y **Máscara PBR**.
 - El indicador **Autoguardado** de la cabecera se refiere únicamente a la copia de seguridad del proyecto en el `localStorage` del navegador. No crea archivos.
+- Los presets personalizados se guardan aparte en `localStorage` (`rampforge.presets.v1`) y no forman parte del JSON del proyecto.
 
 ## Atajos
 
@@ -124,6 +129,7 @@ python -m http.server 5173
 │   ├── presets.js          Biblioteca de materiales
 │   ├── project.js          Modelo, defaults y normalización JSON
 │   ├── three-viewer.js     Visor Three.js, luces, PBR y remapeo de UV
+│   ├── user-presets.js     Presets personalizados y persistencia local
 │   └── utils.js            Color, curvas, encoder PNG RGBA y helpers
 ├── assets/favicon.svg
 ├── examples/godot/         Shader Godot 4 + guía de importación

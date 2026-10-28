@@ -434,12 +434,40 @@
       </header>
       <div class="preset-toolbar">
         <div class="filter-chips" id="preset-filters" role="group" aria-label="Filtrar plantillas"></div>
+        <span class="preset-status" id="preset-status" role="status" aria-live="polite"></span>
         <span class="preset-count" id="preset-count"></span>
+      </div>
+      <div class="preset-savebar" id="preset-savebar" hidden>
+        <div class="preset-savebar__head">
+          <span class="eyebrow" data-i18n="presets.saveEyebrow">NUEVO PRESET</span>
+          <strong data-i18n="presets.saveTitle">Añadir a la biblioteca</strong>
+        </div>
+        <label class="preset-savebar__field">
+          <span data-i18n="presets.saveName">Nombre</span>
+          <input class="text-input" id="preset-name-input" type="text" maxlength="48" autocomplete="off" spellcheck="false" placeholder="Nombre del preset" data-i18n-placeholder="presets.saveNamePlaceholder">
+        </label>
+        <label class="preset-savebar__field preset-savebar__field--description">
+          <span data-i18n="presets.saveDescription">Descripción</span>
+          <input class="text-input" id="preset-description-input" type="text" maxlength="120" autocomplete="off" spellcheck="false" placeholder="Descripción opcional" data-i18n-placeholder="presets.saveDescriptionPlaceholder">
+        </label>
+        <div class="preset-savebar__actions">
+          <button class="btn btn--primary btn--small" id="btn-confirm-save-preset" type="button">
+            <svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg>
+            <span data-i18n="presets.saveConfirm">Guardar preset</span>
+          </button>
+          <button class="btn btn--ghost btn--small" id="btn-cancel-save-preset" type="button" data-i18n="common.cancel">Cancelar</button>
+        </div>
       </div>
       <div class="preset-grid" id="preset-grid"></div>
       <footer class="modal__foot">
         <span><svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg> <span data-i18n="presets.footer">Se conservan el nombre, la dirección y la altura de tu rampa.</span></span>
-        <button class="btn btn--ghost btn--small" type="button" data-close-dialog data-i18n="common.cancel">Cancelar</button>
+        <div class="modal__foot-actions">
+          <button class="btn btn--ghost btn--small" id="btn-save-current-preset" type="button" title="Añadir la rampa actual a la biblioteca" data-i18n-title="presets.saveCurrentTitle">
+            <svg class="icon" aria-hidden="true"><use href="#i-save"></use></svg>
+            <span data-i18n="presets.saveCurrent">Guardar rampa actual</span>
+          </button>
+          <button class="btn btn--ghost btn--small" type="button" data-close-dialog data-i18n="common.cancel">Cancelar</button>
+        </div>
       </footer>
     </div>
   </dialog>
