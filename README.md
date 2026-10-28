@@ -1,165 +1,167 @@
 # RampForge — Atlas Studio
 
-SPA de escritorio para diseñar, previsualizar y exportar **texture atlases de degradados** destinados a materiales 3D estilizados, hand-painted y cel-shading.
+English | [Español](./README_es.md)
 
-La interfaz está disponible en **español e inglés** y se puede cambiar en cualquier momento desde el botón de idioma de la cabecera.
+Desktop SPA for designing, previewing and exporting **gradient texture atlases** for stylized, hand-painted and cel-shaded 3D materials.
 
-La aplicación funciona sin build step. Three.js, las fuentes y todos los recursos están incluidos localmente.
+The interface is available in **Spanish and English** and can be switched at any time from the language button in the header.
 
-## Ejecutar
+The application runs without a build step. Three.js, fonts and all assets are bundled locally.
 
-En Windows, haz doble clic en **`start.cmd`**. Comprueba Node.js, inicia el servidor y abre el navegador automáticamente.
+## Run
 
-También puedes ejecutar:
+On Windows, double-click **`start.cmd`**. It checks Node.js, starts the server and opens the browser automatically.
+
+Alternatively, run:
 
 ```bash
 npm run dev
 ```
 
-Abre `http://127.0.0.1:5173`.
+Open `http://127.0.0.1:5173`.
 
-No requiere `npm install` porque no hay dependencias externas. También puedes servir la carpeta con cualquier servidor estático:
+No `npm install` is required because there are no external dependencies. You can also serve the folder with any static server:
 
 ```bash
 python -m http.server 5173
 ```
 
-> Es necesario usar un servidor HTTP para respetar las restricciones de módulos ES6 del navegador. Abrir `index.html` con doble clic puede bloquear los imports.
+> You must use an HTTP server to satisfy browser ES module restrictions. Opening `index.html` directly may block imports.
 
-## Publicar en GitHub Pages
+## Deploy to GitHub Pages
 
-El repositorio está preparado para publicarse como sitio estático:
+The repository is ready to be published as a static site:
 
-- Repositorio: <https://github.com/shintarillo/rampforge-atlas-studio>
-- URL prevista: <https://shintarillo.github.io/rampforge-atlas-studio/>
+- Repository: <https://github.com/shintarillo/rampforge-atlas-studio>
+- Expected URL: <https://shintarillo.github.io/rampforge-atlas-studio/>
 
-### Activar la publicación
+### Enable deployment
 
-1. Abre **Settings → Pages** en el repositorio.
-2. En **Build and deployment**, elige **Deploy from a branch**.
-3. Selecciona la rama `main` y la carpeta `/ (root)`.
-4. Pulsa **Save**.
-5. Espera uno o dos minutos y abre la URL.
+1. Open **Settings → Pages** in the repository.
+2. Under **Build and deployment**, choose **Deploy from a branch**.
+3. Select the `main` branch and the `/ (root)` folder.
+4. Click **Save**.
+5. Wait one or two minutes and open the URL.
 
-No hay build step. GitHub Pages sirve directamente `index.html`, `css/`, `js/`, `fonts/` y `vendor/`. El archivo `.nojekyll` evita que GitHub procese el sitio con Jekyll y garantiza que se publiquen todas las carpetas, incluida `vendor/`.
+There is no build step. GitHub Pages serves `index.html`, `css/`, `js/`, `fonts/` and `vendor/` directly. The `.nojekyll` file prevents GitHub from processing the site with Jekyll and ensures every folder, including `vendor/`, is published.
 
-Cada push a `main` vuelve a publicar el sitio automáticamente. `start.cmd` y `server.mjs` solo se usan para desarrollo local y no afectan a GitHub Pages.
+Every push to `main` redeploys the site automatically. `start.cmd` and `server.mjs` are only used for local development and do not affect GitHub Pages.
 
-## Idioma
+## Language
 
-- El botón **ES / EN** de la cabecera alterna entre español e inglés sin recargar la página.
-- Al arrancar, la app usa el idioma guardado en `localStorage` (`rampforge.language`). Si no existe, usa **inglés por defecto**, independientemente del idioma del navegador.
-- Los textos generados (nombre del proyecto demo, rampas nuevas, plantillas) se crean en el idioma activo. Los nombres de proyecto y de rampa escritos por el usuario se conservan tal cual.
-- Las rampas que mantienen el nombre de un preset integrado se traducen automáticamente al cambiar de idioma. Los presets guardados por el usuario conservan su nombre y descripción originales.
-- La preferencia de idioma es independiente del proyecto JSON y del autoguardado; los archivos guardados no incluyen ajustes de idioma.
+- The **ES / EN** button in the header switches between Spanish and English without reloading the page.
+- On startup, the app uses the language stored in `localStorage` (`rampforge.language`). If none exists, it uses **English by default**, regardless of the browser language.
+- Generated text (demo project name, new ramps, presets) is created in the active language. Project and ramp names entered by the user are kept as-is.
+- Ramps that keep the name of a built-in preset are translated automatically when the language changes. User-saved presets keep their original name and description.
+- Language preference is independent of the JSON project and autosave; saved files do not include language settings.
 
-## Funciones principales
+## Main features
 
-- **Gestión de atlas y rampas**
-  - Crear, duplicar, renombrar, borrar, reordenar y redimensionar franjas.
-  - Drag & drop en la lista o controles de orden en el inspector.
-  - Orientación horizontal o vertical por rampa.
-  - Tamaños de atlas: 256², 512², 1024² y 2048².
-  - Diseño de **1 a 4 columnas independientes**.
-  - Cada columna apila sus rampas y normaliza sus alturas de forma independiente, llenando el atlas sin huecos.
-  - La distribución es alterna por orden de rampa; el número de columnas se limita automáticamente si todavía no hay suficientes rampas.
-  - Altura proporcional por franja dentro de su columna.
-  - Los proyectos antiguos sin `atlasColumns` se cargan con una columna; la demo inicial usa dos.
+- **Atlas and ramp management**
+  - Create, duplicate, rename, delete, reorder and resize strips.
+  - Drag & drop in the list or use the reorder controls in the inspector.
+  - Horizontal or vertical orientation per ramp.
+  - Atlas sizes: 256², 512², 1024² and 2048².
+  - **1 to 4 independent columns**.
+  - Each column stacks its ramps and normalizes their heights independently, filling the atlas without gaps.
+  - Layout alternates by ramp order; the number of columns is automatically limited if there are not enough ramps yet.
+  - Proportional height per strip within its column.
+  - Older projects without `atlasColumns` load with one column; the initial demo uses two.
 
-- **Editor de degradados**
-  - Paradas de color arrastrables sobre el degradado.
-  - Color picker nativo y edición hexadecimal.
-  - Interpolación lineal, suave (Bézier editable) o posterizada por pasos.
-  - Curva de transición con dos nodos verticales interactivos.
-  - Añadir y eliminar paradas.
+- **Gradient editor**
+  - Draggable color stops along the gradient.
+  - Native color picker and hex editing.
+  - Linear, smooth (editable Bézier) or stepped posterized interpolation.
+  - Transition curve with two interactive vertical nodes.
+  - Add and remove stops.
 
-- **Grade global de paleta**
-  - Tono, saturación, brillo, contraste, temperatura split-tone y tinte.
-  - Los ajustes no destruyen los colores base del proyecto.
-  - Aplicación en tiempo real al atlas, las miniaturas y el visor 3D.
+- **Global palette grade**
+  - Hue, saturation, brightness, contrast, split-tone temperature and tint.
+  - Adjustments do not destroy the project's base colors.
+  - Real-time application to the atlas, thumbnails and 3D viewer.
 
-- **Preview 3D con Three.js**
-  - Cubo biselado, esfera, cilindro y plano.
-  - Cámara orbital, zoom, rotación automática y reset de vista.
-  - Sombreado PBR o Toon en tiempo real.
-  - Luz direccional ajustable en intensidad, ángulo y altura.
-  - Iluminación de estudio con sombras y environment local.
+- **3D preview with Three.js**
+  - Beveled cube, sphere, cylinder and plane.
+  - Orbital camera, zoom, auto-rotate and view reset.
+  - Real-time PBR or Toon shading.
+  - Directional light adjustable in intensity, angle and height.
+  - Studio lighting with shadows and a local environment.
 
-- **Región UV del preview**
-  - El visor puede muestrear el atlas completo, la celda de la rampa activa o una región libre.
-  - Selección directa sobre el atlas arrastrando un rectángulo; las cuatro esquinas permiten redimensionarlo.
-  - La misma edición está disponible en la vista ampliada del atlas.
-  - La implementación **remapela las coordenadas UV originales de cada malla**, sin recortar la textura ni perder calidad de filtrado.
-  - La región UV es independiente del PNG exportado: es una herramienta de inspección del material.
+- **Preview UV region**
+  - The viewer can sample the full atlas, the active ramp cell or a free region.
+  - Direct selection on the atlas by dragging a rectangle; the four corners resize it.
+  - The same editing is available in the enlarged atlas view.
+  - The implementation **remaps each mesh's original UV coordinates**, without cropping the texture or losing filtering quality.
+  - The UV region is independent of the exported PNG: it is a material inspection tool.
 
-- **Máscara PBR empaquetada**
-  - Pestaña **PBR** en el inspector con roughness, metallic, emission y opacity constantes por rampa.
-  - Segunda textura RGB(A) alineada con las mismas celdas y UV que el atlas de color.
-  - Canales: `R = roughness`, `G = metallic`, `B = emission normalizada`, `A = opacity`.
-  - Vista previa por canal (RGBA / R / G / B / A).
-  - Resolución independiente de la máscara: 128², 256², 512² o 1024².
-  - Escala de emisión configurable (`1×`, `2×`, `4×`, `8×`) para recuperar valores HDR en el shader.
-  - Exportación PNG lineal con alpha directo, sin premultiplicar.
-  - El visor Three.js usa la máscara en tiempo real para roughness, metalness, emisión y transparencia.
-  - [Guía de integración con Godot 4 y shader de ejemplo](./examples/godot/README.md).
+- **Packed PBR mask**
+  - **PBR** tab in the inspector with constant roughness, metallic, emission and opacity per ramp.
+  - Second RGB(A) texture aligned to the same cells and UVs as the color atlas.
+  - Channels: `R = roughness`, `G = metallic`, `B = normalized emission`, `A = opacity`.
+  - Per-channel preview (RGBA / R / G / B / A).
+  - Independent mask resolution: 128², 256², 512² or 1024².
+  - Configurable emission scale (`1×`, `2×`, `4×`, `8×`) to recover HDR values in the shader.
+  - Linear PNG export with straight alpha, not premultiplied.
+  - The Three.js viewer uses the mask in real time for roughness, metalness, emission and transparency.
+  - [Godot 4 integration guide and example shader](./examples/godot/README.md).
 
-- **Plantillas de material**
-  - 17 presets integrados (madera, metales, cristal, cuero, piedra, tela, piel, hielo, neón y estilos Toon).
-  - Nombres, descripciones y categorías se traducen con la interfaz. Las rampas que conservan el nombre de un preset integrado también se traducen al cambiar de idioma; los nombres personalizados se respetan.
-  - **Guardar rampa actual** añade la rampa activa a la biblioteca con su nombre, descripción, paradas, interpolación, curva, pasos y valores PBR.
-  - Los presets personalizados (hasta 80) se guardan en `localStorage` (`rampforge.presets.v1`), aparecen en la categoría **Personalizados** y se pueden eliminar desde su tarjeta.
-  - Filtros por categoría y vista previa real de cada degradado.
-  - Aplicación sobre la rampa activa conservando nombre, altura y orientación. Los presets integrados respetan los parámetros PBR actuales; los personalizados aplican los suyos.
+- **Material templates**
+  - 17 built-in presets (wood, metals, glass, leather, stone, fabric, skin, ice, neon and Toon styles).
+  - Names, descriptions and categories are translated with the interface. Ramps that keep a built-in preset name are also translated when switching languages; custom names are respected.
+  - **Save current ramp** adds the active ramp to the library with its name, description, stops, interpolation, curve, steps and PBR values.
+  - Custom presets (up to 80) are stored in `localStorage` (`rampforge.presets.v1`), appear under the **Custom** category, and can be deleted from their card.
+  - Category filters and a real preview of each gradient.
+  - Applying to the active ramp preserves its name, height and orientation. Built-in presets respect current PBR values; custom presets apply their own.
 
-- **Proyecto y exportación**
-  - Exportación del atlas de color PNG a la resolución activa.
-  - Exportación de la máscara PBR lineal RGBA a la resolución elegida.
-  - Guardado/carga del proyecto completo en JSON (`* .rampforge.json`), incluidos los valores PBR.
-  - **Guardar JSON** abre el diálogo nativo de guardado en navegadores compatibles (Chrome/Edge); si no está disponible, descarga el archivo.
-  - Autoguardado en `localStorage`, independiente del archivo JSON.
-  - Restauración de la demo desde el pie del panel izquierdo.
+- **Project and export**
+  - Export the color atlas as PNG at the active resolution.
+  - Export the linear RGBA PBR mask at the selected resolution.
+  - Save/load the complete project as JSON (`*.rampforge.json`), including PBR values.
+  - **Save JSON** opens the native save dialog in supported browsers (Chrome/Edge); if unavailable, it downloads the file.
+  - Autosave in `localStorage`, independent of the JSON file.
+  - Restore the demo from the bottom of the left panel.
 
-## Guardado
+## Saving
 
-- **Guardar JSON** está en la cabecera y escribe el proyecto en disco. En Chrome/Edge se abre el diálogo nativo para elegir la ubicación; en navegadores sin File System Access se inicia una descarga.
-- **Cargar** está en la cabecera y abre un selector de archivo JSON.
-- La exportación de texturas está en el panel **Atlas generado**: **Color PNG** y **Máscara PBR**.
-- El indicador **Autoguardado** de la cabecera se refiere únicamente a la copia de seguridad del proyecto en el `localStorage` del navegador. No crea archivos.
-- Los presets personalizados se guardan aparte en `localStorage` (`rampforge.presets.v1`) y no forman parte del JSON del proyecto.
+- **Save JSON** is in the header and writes the project to disk. In Chrome/Edge a native dialog lets you choose the location; browsers without File System Access start a download.
+- **Load** is in the header and opens a JSON file picker.
+- Texture export is in the **Generated atlas** panel: **Color PNG** and **PBR mask**.
+- The **Autosaved** indicator in the header refers only to the project backup in the browser's `localStorage`. It does not create files.
+- Custom presets are stored separately in `localStorage` (`rampforge.presets.v1`) and are not part of the project JSON.
 
-## Atajos
+## Shortcuts
 
-| Atajo | Acción |
+| Shortcut | Action |
 | --- | --- |
-| `Ctrl / Cmd + S` | Guardar proyecto JSON en disco |
-| `Ctrl / Cmd + Shift + E` | Exportar atlas de color PNG |
-| `Esc` | Cerrar drawers o diálogos |
+| `Ctrl / Cmd + S` | Save the JSON project to disk |
+| `Ctrl / Cmd + Shift + E` | Export the color atlas as PNG |
+| `Esc` | Close drawers or dialogs |
 
-## Estructura
+## Structure
 
 ```text
 .
-├── index.html              Markup, controles y sprite SVG
-├── css/styles.css          Sistema visual, layout responsive y controles
+├── index.html              Markup, controls and SVG sprite
+├── css/styles.css          Visual system, responsive layout and controls
 ├── js/
-│   ├── app.js              Estado, UI, interacciones, exportación e importación
-│   ├── atlas.js            Rasterizador de rampas y atlas
-│   ├── i18n.js             Mensajes ES/EN, preferencia y traducción de la UI
-│   ├── presets.js          Biblioteca de materiales
-│   ├── project.js          Modelo, defaults y normalización JSON
-│   ├── three-viewer.js     Visor Three.js, luces, PBR y remapeo de UV
-│   ├── user-presets.js     Presets personalizados y persistencia local
-│   └── utils.js            Color, curvas, encoder PNG RGBA y helpers
+│   ├── app.js              State, UI, interactions, export and import
+│   ├── atlas.js            Ramp and atlas rasterizer
+│   ├── i18n.js             ES/EN messages, preference and UI translation
+│   ├── presets.js          Material library
+│   ├── project.js          Model, defaults and JSON normalization
+│   ├── three-viewer.js     Three.js viewer, lights, PBR and UV remapping
+│   ├── user-presets.js     Custom presets and local persistence
+│   └── utils.js            Color, curves, RGBA PNG encoder and helpers
 ├── assets/favicon.svg
-├── examples/godot/         Shader Godot 4 + guía de importación
+├── examples/godot/         Godot 4 shader + import guide
 ├── fonts/                  Manrope + IBM Plex Mono (OFL)
 ├── vendor/three/           Three.js r180 + addons (MIT)
-└── server.mjs              Servidor estático local sin dependencias
+└── server.mjs              Local static server with no dependencies
 ```
 
-## Formato de proyecto
+## Project format
 
-El archivo exportado incluye el proyecto completo:
+The exported file includes the complete project:
 
 ```json
 {
@@ -167,7 +169,7 @@ El archivo exportado incluye el proyecto completo:
   "version": 1,
   "savedAt": "2026-10-27T12:00:00.000Z",
   "project": {
-    "name": "Paleta de Estudio",
+    "name": "Studio Palette",
     "atlasSize": 1024,
     "atlasColumns": 2,
     "pbrMaskSize": 256,
@@ -183,7 +185,7 @@ El archivo exportado incluye el proyecto completo:
     "strips": [
       {
         "id": "ramp_...",
-        "name": "Madera cálida",
+        "name": "Warm wood",
         "orientation": "horizontal",
         "weight": 1.12,
         "interpolation": "smooth",
@@ -204,22 +206,22 @@ El archivo exportado incluye el proyecto completo:
 }
 ```
 
-La carga normaliza valores, valida colores e IDs y tolera proyectos serializados previamente. Los proyectos antiguos reciben valores PBR por defecto y una máscara de 256².
+Loading normalizes values, validates colors and IDs, and tolerates previously serialized projects. Older projects receive default PBR values and a 256² mask.
 
-## Máscara PBR y Godot
+## PBR mask and Godot
 
-La máscara se exporta como PNG RGBA lineal, con la misma cuadrícula y los mismos UV que el atlas de color:
+The mask is exported as a linear RGBA PNG, with the same grid and UVs as the color atlas:
 
 ```text
 R = roughness       G = metallic
-B = emisión / escala  A = opacidad
+B = emission / scale  A = opacity
 ```
 
-La emisión se normaliza para que quepa en 8 bits. Con la escala por defecto `4×`, una emisión `2.0` se guarda como `B = 0.5` (`128/255`) y el shader la recupera multiplicando por `4.0`. Esto genera valores HDR mayores que 1 sin tocar el albedo.
+Emission is normalized to fit in 8 bits. With the default `4×` scale, an emission of `2.0` is stored as `B = 0.5` (`128/255`) and the shader recovers it by multiplying by `4.0`. This produces HDR values greater than 1 without affecting albedo.
 
-La guía completa de importación, el shader y la conexión equivalente en VisualShader están en [`examples/godot/README.md`](./examples/godot/README.md).
+The full import guide, the shader and the equivalent VisualShader setup are in [`examples/godot/README.md`](./examples/godot/README.md).
 
-## Créditos
+## Credits
 
-- [Three.js](https://threejs.org/) — MIT. Copia local en `vendor/three/`.
-- [Manrope](https://fonts.google.com/specimen/Manrope) e [IBM Plex Mono](https://fonts.google.com/specimen/IBM+Plex+Mono) — SIL Open Font License. Licencias en `fonts/`.
+- [Three.js](https://threejs.org/) — MIT. Local copy in `vendor/three/`.
+- [Manrope](https://fonts.google.com/specimen/Manrope) and [IBM Plex Mono](https://fonts.google.com/specimen/IBM+Plex+Mono) — SIL Open Font License. Licenses in `fonts/`.
