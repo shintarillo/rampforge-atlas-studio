@@ -8,7 +8,27 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+.opencode/
 
 # Logs and temporary files
 *.log
 *.tmp
+_qa-*
+_i18n-*
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Local caches and build output
+.cache/
+.parcel-cache/
+coverage/
+dist/
+build/
+.vercel/
+.netlify/
+
+# Local installers / archives
+*.zip

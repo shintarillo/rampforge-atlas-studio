@@ -26,6 +26,25 @@ python -m http.server 5173
 
 > Es necesario usar un servidor HTTP para respetar las restricciones de módulos ES6 del navegador. Abrir `index.html` con doble clic puede bloquear los imports.
 
+## Publicar en GitHub Pages
+
+El repositorio está preparado para publicarse como sitio estático:
+
+- Repositorio: <https://github.com/shintarillo/rampforge-atlas-studio>
+- URL prevista: <https://shintarillo.github.io/rampforge-atlas-studio/>
+
+### Activar la publicación
+
+1. Abre **Settings → Pages** en el repositorio.
+2. En **Build and deployment**, elige **Deploy from a branch**.
+3. Selecciona la rama `main` y la carpeta `/ (root)`.
+4. Pulsa **Save**.
+5. Espera uno o dos minutos y abre la URL.
+
+No hay build step. GitHub Pages sirve directamente `index.html`, `css/`, `js/`, `fonts/` y `vendor/`. El archivo `.nojekyll` evita que GitHub procese el sitio con Jekyll y garantiza que se publiquen todas las carpetas, incluida `vendor/`.
+
+Cada push a `main` vuelve a publicar el sitio automáticamente. `start.cmd` y `server.mjs` solo se usan para desarrollo local y no afectan a GitHub Pages.
+
 ## Idioma
 
 - El botón **ES / EN** de la cabecera alterna entre español e inglés sin recargar la página.
