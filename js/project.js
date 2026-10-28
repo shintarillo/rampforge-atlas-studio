@@ -1,5 +1,6 @@
 import { ATLAS_SIZES, clamp, uid, normalizeHex, deepClone } from "./utils.js";
 import { getPreset } from "./presets.js";
+import { t } from "./i18n.js";
 
 const DEFAULT_ADJUSTMENTS = {
   hue: 0,
@@ -50,7 +51,7 @@ export function stripFromPreset(preset, overrides = {}) {
   const emissionScale = clamp(Number(overrides.emissionScale) || 4, 1, 16);
   return {
     id: overrides.id || uid("ramp"),
-    name: overrides.name || preset.name,
+    name: overrides.name || t(`presets.${preset.id}.name`, {}, preset.name),
     orientation: overrides.orientation || "horizontal",
     weight: clamp(Number(overrides.weight ?? 1), 0.25, 8),
     interpolation: preset.interpolation || "smooth",
@@ -65,7 +66,7 @@ export function stripFromPreset(preset, overrides = {}) {
 }
 
 export function createBlankStrip(overrides = {}) {
-  const name = normalizeName(overrides.name, "Nueva rampa");
+  const name = normalizeName(overrides.name, t("ramp.new"));
   const emissionScale = clamp(Number(overrides.emissionScale) || 4, 1, 16);
   return {
     id: overrides.id || uid("ramp"),
@@ -107,42 +108,36 @@ export function createDefaultProject() {
   const definitions = [
     {
       preset: "wood-warm",
-      name: "Madera cálida",
       weight: 1.12,
       orientation: "horizontal",
       pbr: { roughness: 0.8, metallic: 0, emission: 0, opacity: 1 },
     },
     {
       preset: "gold-polished",
-      name: "Oro pulido",
       weight: 0.98,
       orientation: "horizontal",
       pbr: { roughness: 0.27, metallic: 1, emission: 0, opacity: 1 },
     },
     {
       preset: "crystal-prism",
-      name: "Cristal prismático",
       weight: 0.86,
       orientation: "vertical",
       pbr: { roughness: 0.12, metallic: 0.12, emission: 0.8, opacity: 1 },
     },
     {
       preset: "leather-worn",
-      name: "Cuero envejecido",
       weight: 1.06,
       orientation: "horizontal",
       pbr: { roughness: 0.74, metallic: 0, emission: 0, opacity: 1 },
     },
     {
       preset: "volcanic-stone",
-      name: "Piedra volcánica",
       weight: 1.14,
       orientation: "horizontal",
       pbr: { roughness: 0.92, metallic: 0.03, emission: 0.18, opacity: 1 },
     },
     {
       preset: "fabric-olive",
-      name: "Tela oliva",
       weight: 0.96,
       orientation: "vertical",
       pbr: { roughness: 0.87, metallic: 0, emission: 0, opacity: 1 },
@@ -152,7 +147,6 @@ export function createDefaultProject() {
   const strips = definitions.map((definition) => {
     const preset = getPreset(definition.preset);
     return stripFromPreset(preset, {
-      name: definition.name,
       weight: definition.weight,
       orientation: definition.orientation,
       pbr: definition.pbr,
@@ -161,7 +155,7 @@ export function createDefaultProject() {
 
   return {
     version: 1,
-    name: "Paleta de Estudio",
+    name: t("demo.projectName"),
     atlasSize: 1024,
     atlasColumns: 2,
     pbrMaskSize: 256,
@@ -207,7 +201,7 @@ function normalizeStops(inputStops) {
 
 export function normalizeProject(input) {
   if (!input || typeof input !== "object") {
-    throw new Error("El archivo no contiene un proyecto válido.");
+    throw new Error("The file does not contain a valid project.");
   }
 
   const source = input.project && typeof input.project === "object" && Array.isArray(input.project.strips)
@@ -215,7 +209,7 @@ export function normalizeProject(input) {
     : input;
 
   if (!Array.isArray(source.strips)) {
-    throw new Error("El proyecto no contiene una lista de rampas.");
+    throw new Error("The project does not contain a ramp list.");
   }
 
   const emissionScale = EMISSION_SCALES.includes(Number(source.emissionScale))
@@ -240,7 +234,7 @@ export function normalizeProject(input) {
 
       return {
         id,
-        name: normalizeName(strip.name, `Rampa ${index + 1}`),
+        name: normalizeName(strip.name, t("ramp.fallback", { index: index + 1 })),
         orientation,
         weight: clamp(isFiniteNumber(strip.weight) ? Number(strip.weight) : 1, 0.25, 8),
         interpolation,
@@ -273,7 +267,7 @@ export function normalizeProject(input) {
 
   return {
     version: 1,
-    name: normalizeName(source.name, "Proyecto sin título"),
+    name: normalizeName(source.name, t("app.untitledProject")),
     atlasSize,
     atlasColumns,
     pbrMaskSize,

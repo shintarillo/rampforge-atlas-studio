@@ -38,7 +38,18 @@ import {
   renderRampToCanvas,
   sampleStripColor,
 } from "./atlas.js";
-import { MESH_LABELS, ThreePreview } from "./three-viewer.js";
+import { ThreePreview } from "./three-viewer.js";
+import {
+  applyTranslations,
+  getLanguage,
+  getLocale,
+  initLanguage,
+  t,
+  tPlural,
+  toggleLanguage,
+  translatePreset,
+  translatePresetCategory,
+} from "./i18n.js";
 
 const STORAGE_KEY = "rampforge.atlas.project.v1";
 const DEFAULT_LIGHT = Object.freeze({ intensity: 3.2, azimuth: -35, elevation: 48 });
@@ -58,6 +69,9 @@ const els = {
   projectName: $("#project-name"),
   saveState: $("#save-state"),
   saveLabel: $("#save-label"),
+  btnLanguage: $("#btn-language"),
+  languageLabel: $("#language-label"),
+  metaDescription: $("#meta-description"),
   sizeSwitcher: $("#size-switcher"),
   columnsSwitcher: $("#columns-switcher"),
   columnsActive: $("#columns-active"),
@@ -151,11 +165,24 @@ const appState = {
   isExporting: false,
   isPbrExporting: false,
   isSavingFile: false,
+  isAutosaving: false,
+  autosaveError: false,
 };
 
 let viewer = null;
 let pbrMaskCanvas = null;
 let toastId = 0;
+
+const MESH_LABEL_KEYS = {
+  cube: "viewer.meshCubeTitle",
+  sphere: "viewer.meshSphereTitle",
+  cylinder: "viewer.meshCylinderTitle",
+  plane: "viewer.meshPlaneTitle",
+};
+
+function meshLabel(type) {
+  return t(MESH_LABEL_KEYS[type] || MESH_LABEL_KEYS.cube);
+}
 
 /* =========================================================
    Boot & project state
@@ -166,7 +193,7 @@ function readStoredProject() {
     if (!raw) return null;
     return normalizeProject(JSON.parse(raw));
   } catch (error) {
-    console.warn("No se pudo restaurar el proyecto local.", error);
+    console.warn("Could not restore the local project.", error);
     return null;
   }
 }
@@ -215,7 +242,7 @@ function slideFirstStop(strip) {
 }
 
 function commitProjectName(value, { save = true } = {}) {
-  const name = String(value || "").trim().slice(0, 64) || "Proyecto sin título";
+  const name = String(value || "").trim().slice(0, 64) || t("app.untitledProject");
   appState.project.name = name;
   document.title = `RampForge — ${name}`;
   if (els.projectName.value !== name && document.activeElement !== els.projectName) {
@@ -279,19 +306,22 @@ function updateColumnsControl() {
     const isActive = value === requested;
     button.classList.toggle("is-active", isActive);
     button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    button.title = value === 1
+      ? t("sidebar.columnTitleOne")
+      : t("sidebar.columnTitleMany", { count: value });
   });
 
   if (strips.length === 0) {
-    els.columnsActive.textContent = "SIN RAMPAS";
-    els.columnsHint.textContent = "Añade rampas para distribuir el atlas en columnas.";
+    els.columnsActive.textContent = t("sidebar.columnsNoRamps");
+    els.columnsHint.textContent = t("sidebar.columnsHintEmpty");
   } else if (active < requested) {
-    els.columnsActive.textContent = `${active} DE ${requested}`;
-    els.columnsHint.textContent = `Faltan rampas para usar ${requested} columnas. Ahora mismo se muestran ${active}.`;
+    els.columnsActive.textContent = t("sidebar.columnsPartial", { active, requested });
+    els.columnsHint.textContent = t("sidebar.columnsHintInsufficient", { active, requested });
   } else {
-    els.columnsActive.textContent = `${active} ${active === 1 ? "ACTIVA" : "ACTIVAS"}`;
+    els.columnsActive.textContent = t(active === 1 ? "sidebar.columnsActiveOne" : "sidebar.columnsActiveMany", { count: active });
     els.columnsHint.textContent = active === 1
-      ? "Alturas independientes. Una sola pila a ancho completo."
-      : "Pilas independientes. Cada columna reparte sus propias alturas.";
+      ? t("sidebar.columnsHintSingle")
+      : t("sidebar.columnsHintMany");
   }
 }
 
@@ -309,10 +339,15 @@ function renderRampList() {
       const metric = metricMap.get(strip.id) || { width: 0, height: 0, column: 0, percentage: 0 };
       const selected = strip.id === appState.selectedStripId;
       const orientationIcon = strip.orientation === "vertical" ? "arrow-downline" : "arrow-right";
-      const orientationLabel = strip.orientation === "vertical" ? "Vertical" : "Horizontal";
+      const orientationLabel = strip.orientation === "vertical" ? t("ramp.vertical") : t("ramp.horizontal");
       const dimensionLabel = `${metric.width}×${metric.height}px`;
       const columnLabel = activeColumns > 1 ? ` · C${(metric.column || 0) + 1}` : "";
-      const columnAria = activeColumns > 1 ? `, columna ${(metric.column || 0) + 1} de ${activeColumns}` : "";
+      const columnAria = activeColumns > 1
+        ? t("ramp.itemColumnAria", { column: (metric.column || 0) + 1, columns: activeColumns })
+        : "";
+      const columnTitle = activeColumns > 1
+        ? t("ramp.itemColumnTitle", { column: (metric.column || 0) + 1, columns: activeColumns })
+        : "";
       return `
         <div class="ramp-item${selected ? " is-selected" : ""}"
           role="button"
@@ -321,7 +356,7 @@ function renderRampList() {
           aria-pressed="${selected ? "true" : "false"}"
           aria-label="${escapeHTML(strip.name)}, ${orientationLabel}, ${dimensionLabel}${columnAria}"
           data-strip-id="${escapeHTML(strip.id)}"
-          title="${orientationLabel}${columnAria} · ${dimensionLabel}">
+          title="${orientationLabel}${columnTitle} · ${dimensionLabel}">
           <span class="ramp-item__grip" aria-hidden="true">${icon("grip")}</span>
           <span class="ramp-item__thumb"><canvas width="74" height="74" data-strip-swatch="${escapeHTML(strip.id)}"></canvas></span>
           <span class="ramp-item__body">
@@ -429,8 +464,8 @@ function updateUvPreview() {
     if (mode === "ramp") {
       const strip = activeStrip();
       button.title = hasStrips && strip
-        ? `Mapear la banda de “${strip.name}” sobre el objeto`
-        : "Mapear la banda de la rampa activa sobre el objeto";
+        ? t("atlas.modeRampTitleNamed", { name: strip.name })
+        : t("atlas.modeRampTitle");
     }
   });
 
@@ -451,41 +486,42 @@ function updateUvPreview() {
     selection.style.top = `${region.y * 100}%`;
     selection.style.width = `${region.width * 100}%`;
     selection.style.height = `${region.height * 100}%`;
-    const label = appState.uvMode === "ramp" ? "RAMPA" : "UV";
+    const label = appState.uvMode === "ramp" ? t("atlas.uvSelectionRamp") : "UV";
     const labelNode = selection.querySelector(".uv-selection__label");
     if (labelNode) labelNode.textContent = label;
-    const overlayTitle = `Región UV · ${summary} · ${position}`;
+    const overlayTitle = t("atlas.uvRegionTitle", { summary, position });
     overlay.title = overlayTitle;
     selection.title = overlayTitle;
   });
 
   if (els.viewportUvLabel && els.viewportUvPill) {
-    let label = "Atlas completo";
+    let label = t("atlas.uvPillFull");
     if (!hasStrips) {
-      label = "Sin atlas";
+      label = t("atlas.uvPillNone");
     } else if (appState.uvMode === "ramp" && rampStrip) {
-      label = `Rampa · ${rampStrip.name}`;
+      label = t("atlas.uvPillRamp", { name: rampStrip.name });
     } else if (appState.uvMode === "ramp") {
-      label = "Rampa activa";
+      label = t("atlas.uvPillRampFallback");
     } else if (appState.uvMode === "custom") {
-      label = `Libre · ${summary}`;
+      label = t("atlas.uvPillFree", { summary });
     }
     els.viewportUvLabel.textContent = label;
     els.viewportUvPill.classList.toggle("is-active", hasStrips && appState.uvMode !== "full");
     els.viewportUvPill.title = hasStrips
-      ? `Región UV: ${summary} · ${position}`
-      : "Añade una rampa para muestrear el atlas";
+      ? t("atlas.uvPillTitle", { summary, position })
+      : t("atlas.uvPillNoAtlasTitle");
   }
 
   if (els.atlasModal.open) {
     const activeColumns = getEffectiveAtlasColumns(appState.project);
-    const columnMeta = activeColumns > 1 ? ` · ${activeColumns} col.` : "";
+    const columnMeta = activeColumns > 1 ? t("atlas.columnMeta", { count: activeColumns }) : "";
     const modeLabel = appState.uvMode === "full"
-      ? "atlas completo"
+      ? t("atlas.modeLabelFull")
       : appState.uvMode === "ramp"
-        ? "rampa activa"
-        : `región libre (${summary})`;
-    els.atlasModalMeta.textContent = `${appState.project.atlasSize} × ${appState.project.atlasSize} px${columnMeta} · UV: ${modeLabel}`;
+        ? t("atlas.modeLabelRamp")
+        : t("atlas.modeLabelFree", { summary });
+    const resolution = `${appState.project.atlasSize} × ${appState.project.atlasSize}`;
+    els.atlasModalMeta.textContent = t("atlas.modalMetaUv", { resolution, columns: columnMeta, mode: modeLabel });
   }
 }
 
@@ -495,8 +531,8 @@ function setUvMode(mode) {
   if (!hasStrips && mode !== "full") {
     showToast({
       type: "error",
-      title: "Sin atlas",
-      message: "Añade al menos una rampa para definir la región UV del visor.",
+      title: t("toast.noAtlasTitle"),
+      message: t("toast.noAtlasMessage"),
     });
     return;
   }
@@ -509,8 +545,8 @@ function setUvMode(mode) {
       appState.uvHintShown = true;
       showToast({
         type: "info",
-        title: "Región UV libre",
-        message: "Arrastra sobre el atlas para dibujar la región. Usa las esquinas para afinarla; amplía el atlas para más precisión.",
+        title: t("toast.uvFreeTitle"),
+        message: t("toast.uvFreeMessage"),
         duration: 5600,
       });
     }
@@ -625,29 +661,30 @@ function updateAtlasMeta() {
   const size = project.atlasSize;
   const hasStrips = project.strips.length > 0;
   const activeColumns = getEffectiveAtlasColumns(project);
-  const rampWord = project.strips.length === 1 ? "rampa" : "rampas";
-  const ramps = String(project.strips.length);
+  const rampCount = project.strips.length;
+  const ramps = String(rampCount);
+  const rampsLabel = tPlural(rampCount, "atlas.rampOne", "atlas.rampMany", { count: rampCount });
   const resolution = `${size} × ${size}`;
   const memory = formatBytes(size * size * 4);
-  const columnMeta = activeColumns > 1 ? ` · ${activeColumns} col.` : "";
+  const columnMeta = activeColumns > 1 ? t("atlas.columnMeta", { count: activeColumns }) : "";
 
   els.factResolution.textContent = resolution;
   els.factSize.textContent = `~${memory} RGBA`;
-  els.atlasCardMeta.textContent = `${resolution} px · ${ramps} ${rampWord}${columnMeta}`;
+  els.atlasCardMeta.textContent = `${resolution} px · ${rampsLabel}${columnMeta}`;
   els.atlasSizeTag.textContent = `${size}²`;
   els.atlasCornerTag.textContent = `${size} × ${size}`;
   els.statRamps.textContent = ramps;
   els.statResolution.textContent = `${size}²`;
   els.atlasEmpty.hidden = hasStrips;
-  els.atlasModalMeta.textContent = `${resolution} px · PNG sRGB${columnMeta}`;
+  els.atlasModalMeta.textContent = `${t("atlas.modalMeta", { resolution })}${columnMeta}`;
   [els.btnExportAtlas, els.btnExportAtlasModal].forEach((button) => {
     if (button) button.disabled = !hasStrips || appState.isExporting;
   });
   if (els.btnExportPbrAtlas) {
     els.btnExportPbrAtlas.disabled = !hasStrips || appState.isPbrExporting;
   }
-  els.atlasCanvas.setAttribute("aria-label", `Atlas de degradados de ${ramps} ${rampWord}, ${resolution} píxeles`);
-  els.atlasModalCanvas.setAttribute("aria-label", `Vista ampliada del atlas, ${resolution} píxeles`);
+  els.atlasCanvas.setAttribute("aria-label", t("atlas.canvasAria", { ramps: rampsLabel, resolution }));
+  els.atlasModalCanvas.setAttribute("aria-label", t("atlas.modalCanvasAria", { resolution }));
 }
 
 function refreshAtlas() {
@@ -782,15 +819,15 @@ function rampTabMarkup(strip) {
         class="stop-marker${selected ? " is-selected" : ""}"
         style="left:${(stop.pos * 100).toFixed(3)}%; --stop-color:${color}"
         data-stop-id="${escapeHTML(stop.id)}"
-        title="Parada ${index + 1} · ${Math.round(stop.pos * 100)}%"
-        aria-label="Parada ${index + 1}, color ${stop.color}, posición ${Math.round(stop.pos * 100)} por ciento"></button>`;
+        title="${t("ramp.stopMarker", { index: index + 1, percentage: Math.round(stop.pos * 100) })}"
+        aria-label="${t("ramp.stopAria", { index: index + 1, color: stop.color, percentage: Math.round(stop.pos * 100) })}"></button>`;
     })
     .join("");
 
   const interpolationButtons = [
-    ["linear", "Lineal"],
-    ["smooth", "Suave"],
-    ["steps", "Pasos"],
+    ["linear", t("ramp.interpLinear")],
+    ["smooth", t("ramp.interpSmooth")],
+    ["steps", t("ramp.interpSteps")],
   ]
     .map(
       ([value, label]) =>
@@ -803,66 +840,72 @@ function rampTabMarkup(strip) {
     modeExtra = `
       <div class="control-note">
         ${icon("arrow-right")}
-        <span>Transición directa entre paradas. Elige <strong>Suave</strong> para editar la curva Bézier.</span>
+        <span>${t("ramp.linearNote")}</span>
       </div>`;
   } else if (strip.interpolation === "steps") {
     modeExtra = `
       <div class="slider-field" style="margin-top:11px">
         <div class="slider-field__head">
-          <span>Bandas de color</span>
+          <span>${t("ramp.steps")}</span>
           <output id="steps-value">${strip.steps}</output>
         </div>
-        <input class="range" id="strip-steps" type="range" min="2" max="16" step="1" value="${strip.steps}" data-step-count="true" aria-label="Número de pasos">
+        <input class="range" id="strip-steps" type="range" min="2" max="16" step="1" value="${strip.steps}" data-step-count="true" aria-label="${t("ramp.stepsAria")}">
       </div>
       <div class="control-note">
         ${icon("grid")}
-        <span>Posterización en ${strip.steps} niveles. Perfecta para cel-shading y looks de cómic.</span>
+        <span>${t("ramp.stepsNote", { count: strip.steps })}</span>
       </div>`;
   } else {
     modeExtra = `
       <div class="curve-panel">
         <div class="curve-panel__head">
-          <span>Curva Bézier · arrastra los nodos</span>
-          <button type="button" data-action="reset-curve" title="Restablecer curva suave">${icon("reset")} Suave</button>
+          <span>${t("ramp.curveHead")}</span>
+          <button type="button" data-action="reset-curve" title="${t("ramp.resetCurve")}">${icon("reset")} ${t("ramp.resetCurveLabel")}</button>
         </div>
         <div class="curve-canvas-wrap">
-          <canvas id="curve-canvas" width="600" height="200" aria-label="Editor de curva de transición"></canvas>
+          <canvas id="curve-canvas" width="600" height="200" aria-label="${t("ramp.curveAria")}"></canvas>
         </div>
         <div class="curve-panel__values">
-          <span>Entrada <strong data-curve-value="in">${Number(strip.curve.in).toFixed(2)}</strong></span>
+          <span>${t("ramp.curveIn")} <strong data-curve-value="in">${Number(strip.curve.in).toFixed(2)}</strong></span>
           <span>Bézier</span>
-          <span>Salida <strong data-curve-value="out">${Number(strip.curve.out).toFixed(2)}</strong></span>
+          <span>${t("ramp.curveOut")} <strong data-curve-value="out">${Number(strip.curve.out).toFixed(2)}</strong></span>
         </div>
       </div>`;
   }
 
+  const interpolationLabel = strip.interpolation === "smooth"
+    ? t("ramp.modeSmooth")
+    : strip.interpolation === "steps"
+      ? t("ramp.modeSteps")
+      : t("ramp.modeLinear");
+
   return `
     <div class="ramp-overview">
       <div class="ramp-overview__title">
-        <span class="eyebrow">RAMPA ${pad2(stripIndex + 1)} / ${pad2(project.strips.length)}</span>
+        <span class="eyebrow">${t("ramp.counter", { index: pad2(stripIndex + 1), total: pad2(project.strips.length) })}</span>
         <h2 id="ramp-title-text">${escapeHTML(strip.name)}</h2>
       </div>
       <div class="ramp-overview__actions">
-        <button class="icon-btn" type="button" data-ramp-action="move-up" title="Mover arriba" aria-label="Mover rampa arriba" ${stripIndex === 0 ? "disabled" : ""}>${icon("arrow-up")}</button>
-        <button class="icon-btn" type="button" data-ramp-action="move-down" title="Mover abajo" aria-label="Mover rampa abajo" ${stripIndex === project.strips.length - 1 ? "disabled" : ""}>${icon("arrow-down")}</button>
-        <button class="icon-btn" type="button" data-ramp-action="duplicate" title="Duplicar rampa" aria-label="Duplicar rampa">${icon("copy")}</button>
-        <button class="icon-btn icon-btn--danger" type="button" data-ramp-action="delete" title="Eliminar rampa" aria-label="Eliminar rampa">${icon("trash")}</button>
+        <button class="icon-btn" type="button" data-ramp-action="move-up" title="${t("ramp.moveUp")}" aria-label="${t("ramp.moveUpAria")}" ${stripIndex === 0 ? "disabled" : ""}>${icon("arrow-up")}</button>
+        <button class="icon-btn" type="button" data-ramp-action="move-down" title="${t("ramp.moveDown")}" aria-label="${t("ramp.moveDownAria")}" ${stripIndex === project.strips.length - 1 ? "disabled" : ""}>${icon("arrow-down")}</button>
+        <button class="icon-btn" type="button" data-ramp-action="duplicate" title="${t("ramp.duplicate")}" aria-label="${t("ramp.duplicate")}">${icon("copy")}</button>
+        <button class="icon-btn icon-btn--danger" type="button" data-ramp-action="delete" title="${t("ramp.delete")}" aria-label="${t("ramp.delete")}">${icon("trash")}</button>
       </div>
     </div>
 
     <div class="ramp-form">
       <label class="field">
-        <span class="field__label">Nombre</span>
+        <span class="field__label">${t("ramp.name")}</span>
         <input class="text-input" id="ramp-name" type="text" maxlength="48" autocomplete="off" spellcheck="false" value="${escapeHTML(strip.name)}">
       </label>
       <div class="field">
-        <span class="field__label">Dirección del degradado <small class="control-micro">EN EL ATLAS</small></span>
-        <div class="segmented orientation-switch" role="group" aria-label="Dirección del degradado">
+        <span class="field__label">${t("ramp.direction")} <small class="control-micro">${t("ramp.inAtlas")}</small></span>
+        <div class="segmented orientation-switch" role="group" aria-label="${t("ramp.directionAria")}">
           <button type="button" data-orientation="horizontal" class="${strip.orientation === "horizontal" ? "is-active" : ""}" aria-pressed="${strip.orientation === "horizontal"}">
-            ${icon("arrow-right")} Horizontal
+            ${icon("arrow-right")} ${t("ramp.horizontal")}
           </button>
           <button type="button" data-orientation="vertical" class="${strip.orientation === "vertical" ? "is-active" : ""}" aria-pressed="${strip.orientation === "vertical"}">
-            ${icon("arrow-downline")} Vertical
+            ${icon("arrow-downline")} ${t("ramp.vertical")}
           </button>
         </div>
       </div>
@@ -870,8 +913,8 @@ function rampTabMarkup(strip) {
 
     <section class="control-section">
       <div class="control-section__head">
-        <div class="control-heading__title"><strong>Degradado</strong><small>${stops.length} PARADAS</small></div>
-        <span class="control-micro">${icon("mouse")} EDITA LOS NODOS</span>
+        <div class="control-heading__title"><strong>${t("ramp.gradient")}</strong><small>${t("ramp.stops", { count: stops.length })}</small></div>
+        <span class="control-micro">${icon("mouse")} ${t("ramp.editNodes")}</span>
       </div>
       <div class="gradient-editor">
         <div class="gradient-preview">
@@ -881,34 +924,34 @@ function rampTabMarkup(strip) {
 
         <div class="stop-editor">
           <div class="stop-editor__head">
-            <span>Parada seleccionada</span>
+            <span>${t("ramp.selectedStop")}</span>
             <span>${pad2(selectedIndex + 1)} / ${pad2(stops.length)}</span>
           </div>
           <div class="stop-color-row">
-            <label class="color-picker-shell" id="stop-color-shell" style="--picked-color:${selectedStop ? selectedStop.color : "#ffffff"}" title="Elegir color">
-              <input id="stop-color" type="color" value="${selectedStop ? selectedStop.color : "#ffffff"}" aria-label="Color de la parada">
+            <label class="color-picker-shell" id="stop-color-shell" style="--picked-color:${selectedStop ? selectedStop.color : "#ffffff"}" title="${t("ramp.chooseColor")}">
+              <input id="stop-color" type="color" value="${selectedStop ? selectedStop.color : "#ffffff"}" aria-label="${t("ramp.colorAria")}">
             </label>
-            <input class="hex-field" id="stop-hex" type="text" value="${selectedStop ? selectedStop.color : "#ffffff"}" maxlength="7" autocomplete="off" spellcheck="false" aria-label="Código hexadecimal de la parada">
-            <button class="icon-btn icon-btn--danger" type="button" data-action="remove-stop" title="Eliminar parada" aria-label="Eliminar parada" ${stops.length <= 2 ? "disabled" : ""}>${icon("trash")}</button>
+            <input class="hex-field" id="stop-hex" type="text" value="${selectedStop ? selectedStop.color : "#ffffff"}" maxlength="7" autocomplete="off" spellcheck="false" aria-label="${t("ramp.hexAria")}">
+            <button class="icon-btn icon-btn--danger" type="button" data-action="remove-stop" title="${t("ramp.removeStop")}" aria-label="${t("ramp.removeStop")}" ${stops.length <= 2 ? "disabled" : ""}>${icon("trash")}</button>
           </div>
           <div class="position-row">
-            <span>Posición</span>
-            <input class="range" id="stop-position" type="range" min="0" max="100" step="1" value="${Math.round((selectedStop?.pos || 0) * 100)}" aria-label="Posición de la parada">
+            <span>${t("ramp.position")}</span>
+            <input class="range" id="stop-position" type="range" min="0" max="100" step="1" value="${Math.round((selectedStop?.pos || 0) * 100)}" aria-label="${t("ramp.positionAria")}">
             <output id="stop-position-value">${Math.round((selectedStop?.pos || 0) * 100)}%</output>
           </div>
         </div>
         <div class="gradient-footer">
-          <button class="text-button add-stop-button" type="button" data-action="add-stop">${icon("plus")} Añadir parada</button>
-          <span class="gradient-footer__hint">CLIC + ARRASTRA</span>
+          <button class="text-button add-stop-button" type="button" data-action="add-stop">${icon("plus")} ${t("ramp.addStop")}</button>
+          <span class="gradient-footer__hint">${t("ramp.dragHint")}</span>
         </div>
       </div>
     </section>
 
     <section class="control-section">
       <div class="control-section__head">
-        <div class="control-heading__title"><strong>Interpolación</strong><small>${strip.interpolation === "smooth" ? "BÉZIER" : strip.interpolation === "steps" ? "POSTERIZADO" : "LINEAL"}</small></div>
+        <div class="control-heading__title"><strong>${t("ramp.interpolation")}</strong><small>${interpolationLabel}</small></div>
       </div>
-      <div class="segmented interpolation-switch" role="group" aria-label="Modo de interpolación">
+      <div class="segmented interpolation-switch" role="group" aria-label="${t("ramp.interpolationAria")}">
         ${interpolationButtons}
       </div>
       ${modeExtra}
@@ -917,26 +960,26 @@ function rampTabMarkup(strip) {
     <section class="control-section">
       <div class="control-section__head">
         <div class="control-heading__title">
-          <strong>Presencia en el atlas</strong>
-          <small>${activeColumns > 1 ? `COL ${columnNumber} / ${activeColumns}` : "ANCHO COMPLETO"}</small>
+          <strong>${t("ramp.presence")}</strong>
+          <small>${activeColumns > 1 ? t("ramp.columnShort", { column: columnNumber, columns: activeColumns }) : t("ramp.fullWidth")}</small>
         </div>
       </div>
       <div class="slider-field">
         <div class="slider-field__head">
-          <span>Altura de la celda</span>
+          <span>${t("ramp.cellHeight")}</span>
           <output id="band-height-value">${pixelWidth} × ${pixelHeight}px</output>
         </div>
-        <input class="range" id="strip-weight" type="range" min="0.25" max="4" step="0.05" value="${strip.weight}" data-weight="true" aria-label="Altura relativa de la rampa dentro de su columna">
+        <input class="range" id="strip-weight" type="range" min="0.25" max="4" step="0.05" value="${strip.weight}" data-weight="true" aria-label="${t("ramp.weightAria")}">
         <span class="slider-field__hint">${activeColumns > 1
-          ? `${pixelWidth}px de ancho · ${percentage}% de su columna. El resto de la pila se redistribuye.`
-          : `Ancho completo · ${percentage}% del atlas. El resto de rampas se redistribuye.`}</span>
+          ? t("ramp.cellHint", { width: pixelWidth, percentage })
+          : t("ramp.singleColumnHint", { percentage })}</span>
       </div>
       <button class="ramp-preset-cta" type="button" data-action="open-presets">
         <span class="ramp-preset-cta__copy">
           <span class="ramp-preset-cta__icon">${icon("sparkles")}</span>
           <span>
-            <strong>Aplicar plantilla</strong>
-            <small>${RAMPS_PRESETS.length} looks de material listos para usar</small>
+            <strong>${t("ramp.templates")}</strong>
+            <small>${t("ramp.templatesSubtitle", { count: RAMPS_PRESETS.length })}</small>
           </span>
         </span>
         ${icon("chevron-right")}
@@ -949,9 +992,9 @@ function emptyInspectorMarkup() {
   return `
     <div class="empty-inspector">
       <span class="empty-inspector__icon">${icon("layers")}</span>
-      <h3>Sin rampa activa</h3>
-      <p>Añade una franja de degradado para empezar a dar forma a tu paleta.</p>
-      <button class="btn btn--primary btn--small" type="button" data-action="add-ramp">${icon("plus")} Nueva rampa</button>
+      <h3>${t("ramp.emptyTitle")}</h3>
+      <p>${t("ramp.emptyText")}</p>
+      <button class="btn btn--primary btn--small" type="button" data-action="add-ramp">${icon("plus")} ${t("ramp.new")}</button>
     </div>`;
 }
 
@@ -976,29 +1019,33 @@ function globalTabMarkup() {
     <div class="global-hero">
       <span class="global-hero__icon">${icon("palette")}</span>
       <div>
-        <h2>Ajustes de paleta</h2>
-        <p>Un grade global aplicado a cada parada, en tiempo real, sin destruir tus colores originales.</p>
+        <h2>${t("global.heroTitle")}</h2>
+        <p>${t("global.heroText")}</p>
       </div>
     </div>
 
     <div class="global-list">
-      ${adjustedAdjustmentMarkup("hue", "Tono", -180, 180, 1, "palette", "−180°", "+180°", "range--hue")}
-      ${adjustedAdjustmentMarkup("saturation", "Saturación", -100, 100, 1, "brush", "−100%", "+100%")}
-      ${adjustedAdjustmentMarkup("brightness", "Brillo", -100, 100, 1, "sun", "−100%", "+100%")}
-      ${adjustedAdjustmentMarkup("contrast", "Contraste", -100, 100, 1, "sliders", "SUAVE", "INTENSO")}
-      ${adjustedAdjustmentMarkup("warmth", "Temperatura", -100, 100, 1, "sun", "FRÍO", "CÁLIDO", "range--temperature")}
-      ${adjustedAdjustmentMarkup("tint", "Tinte", -100, 100, 1, "palette", "VERDE", "MAGENTA", "range--tint")}
+      ${adjustedAdjustmentMarkup("hue", t("global.hue"), -180, 180, 1, "palette", "−180°", "+180°", "range--hue")}
+      ${adjustedAdjustmentMarkup("saturation", t("global.saturation"), -100, 100, 1, "brush", "−100%", "+100%")}
+      ${adjustedAdjustmentMarkup("brightness", t("global.brightness"), -100, 100, 1, "sun", "−100%", "+100%")}
+      ${adjustedAdjustmentMarkup("contrast", t("global.contrast"), -100, 100, 1, "sliders", t("global.soft"), t("global.strong"))}
+      ${adjustedAdjustmentMarkup("warmth", t("global.warmth"), -100, 100, 1, "sun", t("global.cool"), t("global.warm"), "range--temperature")}
+      ${adjustedAdjustmentMarkup("tint", t("global.tint"), -100, 100, 1, "palette", t("global.green"), t("global.magenta"), "range--tint")}
     </div>
 
     <div class="global-footer">
       <div class="global-note">
         ${icon("sparkles")}
-        <span><strong>Split toning incluido.</strong> La temperatura calienta las luces y enfría las sombras para integrar la paleta en tu escena.</span>
+        <span><strong>${t("global.splitTitle")}</strong> ${t("global.splitText")}</span>
       </div>
       <div class="global-actions">
-        <button class="btn btn--ghost btn--small" type="button" data-action="reset-global">${icon("reset")} Restablecer ajustes</button>
+        <button class="btn btn--ghost btn--small" type="button" data-action="reset-global">${icon("reset")} ${t("global.reset")}</button>
       </div>
     </div>`;
+}
+
+function renderGlobalTab() {
+  els.inspectorContent.innerHTML = globalTabMarkup();
 }
 
 function renderRampTab() {
@@ -1052,7 +1099,7 @@ function renderPbrTab() {
   const field = (key, value, min, max, step, scaleLeft, scaleRight, output, channel) => pbrFieldMarkup({
     key,
     channel,
-    label: key === "roughness" ? "Rugosidad" : key === "metallic" ? "Metálico" : key === "emission" ? "Emisión" : "Opacidad",
+    label: key === "roughness" ? t("pbr.roughness") : key === "metallic" ? t("pbr.metallic") : key === "emission" ? t("pbr.emission") : t("pbr.opacity"),
     value,
     min,
     max,
@@ -1065,48 +1112,48 @@ function renderPbrTab() {
   els.inspectorContent.innerHTML = `
     <div class="ramp-overview pbr-overview">
       <div class="ramp-overview__title">
-        <span class="eyebrow">MATERIAL PBR · C${columnNumber} / ${activeColumns}</span>
+        <span class="eyebrow">${t("pbr.eyebrow", { column: columnNumber, columns: activeColumns })}</span>
         <h2>${escapeHTML(strip.name)}</h2>
       </div>
       <span class="pbr-cell-chip">${metric?.width || project.atlasSize}×${metric?.height || 0}px</span>
     </div>
     <div class="pbr-intro">
       ${icon("pbr")}
-      <span>Valores constantes para esta celda. La máscara replica exactamente la cuadrícula del atlas y usa los mismos UV.</span>
+      <span>${t("pbr.intro")}</span>
     </div>
 
     <section class="control-section">
       <div class="control-section__head">
-        <div class="control-heading__title"><strong>Parámetros de superficie</strong><small>CONSTANTES · RGBA8</small></div>
+        <div class="control-heading__title"><strong>${t("pbr.surfaceParams")}</strong><small>${t("pbr.constantRgba")}</small></div>
       </div>
       <div class="pbr-fields">
-        ${field("roughness", pbr.roughness, 0, 1, 0.01, "LISO", "MATE", `${pbr.roughness.toFixed(2)} <small>R ${bytes.roughness}</small>`, "R")}
-        ${field("metallic", pbr.metallic, 0, 1, 0.01, "DIELÉCTRICO", "METAL", `${pbr.metallic.toFixed(2)} <small>G ${bytes.metallic}</small>`, "G")}
-        ${field("emission", pbr.emission, 0, project.emissionScale, 0.01, "SIN EMISIÓN", `${project.emissionScale.toFixed(0)}×`, `${pbr.emission.toFixed(2)} <small>B ${bytes.emission}</small>`, "B")}
-        ${field("opacity", pbr.opacity, 0, 1, 0.01, "TRANSPARENTE", "OPACO", `${pbr.opacity.toFixed(2)} <small>A ${bytes.opacity}</small>`, "A")}
+        ${field("roughness", pbr.roughness, 0, 1, 0.01, t("pbr.smooth"), t("pbr.rough"), `${pbr.roughness.toFixed(2)} <small>R ${bytes.roughness}</small>`, "R")}
+        ${field("metallic", pbr.metallic, 0, 1, 0.01, t("pbr.dielectric"), t("pbr.metal"), `${pbr.metallic.toFixed(2)} <small>G ${bytes.metallic}</small>`, "G")}
+        ${field("emission", pbr.emission, 0, project.emissionScale, 0.01, t("pbr.noEmission"), t("pbr.maxEmission", { value: project.emissionScale.toFixed(0) }), `${pbr.emission.toFixed(2)} <small>B ${bytes.emission}</small>`, "B")}
+        ${field("opacity", pbr.opacity, 0, 1, 0.01, t("pbr.transparent"), t("pbr.opaque"), `${pbr.opacity.toFixed(2)} <small>A ${bytes.opacity}</small>`, "A")}
       </div>
     </section>
 
     <section class="control-section">
       <div class="control-section__head">
-        <div class="control-heading__title"><strong>Máscara empaquetada</strong><small>LINEAL · NO sRGB</small></div>
+        <div class="control-heading__title"><strong>${t("pbr.packedMask")}</strong><small>${t("pbr.linearNoSrgb")}</small></div>
       </div>
       <div class="pbr-channel-map">
-        <div class="pbr-channel-map__item"><span class="channel-badge channel-badge--r">R</span> Rugosidad</div>
-        <div class="pbr-channel-map__item"><span class="channel-badge channel-badge--g">G</span> Metálico</div>
-        <div class="pbr-channel-map__item"><span class="channel-badge channel-badge--b">B</span> Emisión</div>
-        <div class="pbr-channel-map__item"><span class="channel-badge channel-badge--a">A</span> Opacidad</div>
+        <div class="pbr-channel-map__item"><span class="channel-badge channel-badge--r">R</span> ${t("pbr.channelR")}</div>
+        <div class="pbr-channel-map__item"><span class="channel-badge channel-badge--g">G</span> ${t("pbr.channelG")}</div>
+        <div class="pbr-channel-map__item"><span class="channel-badge channel-badge--b">B</span> ${t("pbr.channelB")}</div>
+        <div class="pbr-channel-map__item"><span class="channel-badge channel-badge--a">A</span> ${t("pbr.channelA")}</div>
       </div>
       <div class="pbr-preview-card">
         <div class="pbr-preview-card__head">
-          <span>PREVIEW DE CANALES</span>
+          <span>${t("pbr.preview")}</span>
           <span>${project.pbrMaskSize}²</span>
         </div>
         <div class="pbr-preview-card__stage">
-          <canvas id="pbr-mask-preview" width="${project.pbrMaskSize}" height="${project.pbrMaskSize}" aria-label="Vista previa de la máscara PBR"></canvas>
+          <canvas id="pbr-mask-preview" width="${project.pbrMaskSize}" height="${project.pbrMaskSize}" aria-label="${t("pbr.previewAria")}"></canvas>
         </div>
         <div class="pbr-preview-card__foot">
-          <div class="segmented pbr-channel-switcher" id="pbr-channel-switcher" role="group" aria-label="Canal de la máscara a previsualizar">
+          <div class="segmented pbr-channel-switcher" id="pbr-channel-switcher" role="group" aria-label="${t("pbr.channelAria")}">
             ${["rgba", "r", "g", "b", "a"].map((channel) => `<button type="button" data-pbr-view="${channel}" class="${appState.pbrChannelView === channel ? "is-active" : ""}" aria-pressed="${appState.pbrChannelView === channel}">${channel === "rgba" ? "RGBA" : channel.toUpperCase()}</button>`).join("")}
           </div>
           <span class="pbr-byte-type">RGBA8</span>
@@ -1116,17 +1163,17 @@ function renderPbrTab() {
 
     <section class="control-section">
       <div class="control-section__head">
-        <div class="control-heading__title"><strong>Exportación de máscara</strong><small>PNG · LINEAL</small></div>
+        <div class="control-heading__title"><strong>${t("pbr.export")}</strong><small>${t("pbr.pngLinear")}</small></div>
       </div>
       <div class="pbr-settings-grid">
         <label class="select-field">
-          <span>Resolución</span>
+          <span>${t("pbr.resolution")}</span>
           <select class="select-input" id="pbr-mask-size-select">
             ${PBR_MASK_SIZES.map((size) => `<option value="${size}" ${project.pbrMaskSize === size ? "selected" : ""}>${size} × ${size}</option>`).join("")}
           </select>
         </label>
         <label class="select-field">
-          <span>Escala de emisión</span>
+          <span>${t("pbr.emissionScale")}</span>
           <select class="select-input" id="pbr-emission-scale">
             ${EMISSION_SCALES.map((scale) => `<option value="${scale}" ${project.emissionScale === scale ? "selected" : ""}>${scale.toFixed(0)}×</option>`).join("")}
           </select>
@@ -1134,12 +1181,12 @@ function renderPbrTab() {
       </div>
       <div class="control-note">
         ${icon("alert")}
-        <span>El canal B se normaliza: <strong>B = emisión / ${project.emissionScale.toFixed(0)}</strong>. Multiplica B por ${project.emissionScale.toFixed(0)} en Godot para recuperar la intensidad. No importes esta máscara como sRGB.</span>
+        <span>${t("pbr.note", { scale: project.emissionScale.toFixed(0) })}</span>
       </div>
       <button class="btn btn--primary btn--small pbr-export-button" type="button" data-action="export-pbr-mask">
-        ${icon("download")} Descargar máscara PBR
+        ${icon("download")} ${t("pbr.download")}
       </button>
-      <p class="pbr-export-note">La máscara sigue la misma cuadrícula y UV que el atlas de color. El alpha se exporta sin premultiplicar para no alterar los datos.</p>
+      <p class="pbr-export-note">${t("pbr.exportNote")}</p>
     </section>
   `;
 
@@ -1180,7 +1227,7 @@ function syncStopMarkers() {
     marker.style.setProperty("--stop-color", adjustedHex(stop.color, appState.project.globalAdjust));
     const sorted = sortedStops(strip);
     const index = sorted.findIndex((item) => item.id === stop.id);
-    marker.title = `Parada ${index + 1} · ${Math.round(stop.pos * 100)}%`;
+    marker.title = t("ramp.stopMarker", { index: index + 1, percentage: Math.round(stop.pos * 100) });
   });
 
   const selected = findStop(strip, appState.selectedStopId);
@@ -1305,16 +1352,16 @@ function drawCurveEditor() {
     context.fillText(label, handle.x + (alignLeft ? -13 : 13), handle.y);
   };
 
-  drawHandle(c1, "IN", true);
-  drawHandle(c2, "OUT", false);
+  drawHandle(c1, t("ramp.curveIn"), true);
+  drawHandle(c2, t("ramp.curveOut"), false);
 
   context.font = '400 8px "IBM Plex Mono", monospace';
   context.fillStyle = "rgba(210,215,222,0.22)";
   context.textAlign = "left";
   context.textBaseline = "top";
-  context.fillText("SOMBRA", left, top);
+  context.fillText(t("ramp.curveShadow"), left, top);
   context.textAlign = "right";
-  context.fillText("LUZ", left + plotWidth, top);
+  context.fillText(t("ramp.curveLight"), left + plotWidth, top);
 }
 
 function pointToCurveValue(event, canvas) {
@@ -1350,19 +1397,21 @@ function syncRangeFills(root = document) {
    Autosave & save state
    ========================================================= */
 function setSavingState({ saving = false, error = false } = {}) {
+  appState.isAutosaving = Boolean(saving);
+  appState.autosaveError = Boolean(error);
   els.saveState.classList.toggle("is-saving", saving);
   if (error) {
-    els.saveLabel.textContent = "Sin autoguardado";
-    els.saveState.title = "No se pudo guardar en este navegador";
+    els.saveLabel.textContent = t("header.autosaveError");
+    els.saveState.title = t("header.autosaveErrorTitle");
     return;
   }
   if (saving) {
-    els.saveLabel.textContent = "Autoguardando…";
-    els.saveState.title = "Guardando cambios en este navegador";
+    els.saveLabel.textContent = t("header.autosaving");
+    els.saveState.title = t("header.autosavingTitle");
   } else {
-    const time = new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
-    els.saveLabel.textContent = "Autoguardado";
-    els.saveState.title = `Autoguardado en este navegador a las ${time}`;
+    const time = new Date().toLocaleTimeString(getLocale(), { hour: "2-digit", minute: "2-digit" });
+    els.saveLabel.textContent = t("header.autosaved");
+    els.saveState.title = t("header.autosavedTitle", { time });
   }
 }
 
@@ -1381,9 +1430,51 @@ function saveLocalNow() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(buildProjectPayload(appState.project)));
     setSavingState({ saving: false });
   } catch (error) {
-    console.warn("Autosave falló.", error);
+    console.warn("Autosave failed.", error);
     setSavingState({ error: true });
   }
+}
+
+function updateLanguageButton() {
+  if (!els.btnLanguage || !els.languageLabel) return;
+  els.languageLabel.textContent = getLanguage().toUpperCase();
+  els.btnLanguage.dataset.language = getLanguage();
+}
+
+function refreshLanguageUi() {
+  applyTranslations(document);
+  updateLanguageButton();
+  if (els.metaDescription) els.metaDescription.content = t("app.metaDescription");
+  document.title = `RampForge — ${appState.project.name}`;
+  renderRampList();
+  renderInspector({ preserveScroll: true });
+  updateGlobalIndicator();
+  updateColumnsControl();
+  updateAtlasMeta();
+  updateUvPreview();
+  updateCurrentMeshLabel();
+  setSavingState({ saving: appState.isAutosaving, error: appState.autosaveError });
+  if (els.presetModal.open) {
+    els.presetModal.querySelector("#preset-modal-title").textContent = t("presets.title");
+    updatePresetSubtitle();
+    renderPresetGallery();
+  }
+}
+
+function updatePresetSubtitle() {
+  if (!els.presetSubtitle) return;
+  const strip = activeStrip();
+  if (strip) {
+    els.presetSubtitle.innerHTML = t("presets.subtitle", {
+      name: `<strong>${escapeHTML(strip.name)}</strong>`,
+    });
+  } else {
+    els.presetSubtitle.textContent = t("presets.defaultSubtitle");
+  }
+}
+
+function updateCurrentMeshLabel() {
+  els.currentMeshLabel.textContent = meshLabel(appState.mesh);
 }
 
 /* =========================================================
@@ -1417,9 +1508,9 @@ function addRamp() {
   const project = appState.project;
   let number = project.strips.length + 1;
   const existingNames = new Set(project.strips.map((strip) => strip.name.toLowerCase()));
-  while (existingNames.has(`nueva rampa ${number}`.toLowerCase())) number += 1;
+  while (existingNames.has(t("ramp.newName", { number }).toLowerCase())) number += 1;
   const newStrip = createBlankStrip({
-    name: `Nueva rampa ${number}`,
+    name: t("ramp.newName", { number }),
     emissionScale: project.emissionScale,
   });
   let insertIndex = project.strips.length;
@@ -1438,7 +1529,9 @@ function duplicateRamp() {
   const strip = activeStrip();
   if (!strip) return;
   const index = project.strips.findIndex((item) => item.id === strip.id);
-  const duplicate = cloneStrip(strip, { name: `${strip.name} copia`.slice(0, 48) });
+  const duplicate = cloneStrip(strip, {
+    name: t("ramp.copySuffix", { name: strip.name }).slice(0, 48),
+  });
   project.strips.splice(index + 1, 0, duplicate);
   appState.selectedStripId = duplicate.id;
   appState.selectedStopId = interestingStop(duplicate)?.id || null;
@@ -1467,9 +1560,9 @@ function deleteRamp() {
 
   showToast({
     type: "info",
-    title: "Rampa eliminada",
-    message: `“${strip.name}” salió del atlas.`,
-    actionLabel: "Deshacer",
+    title: t("toast.rampDeletedTitle"),
+    message: t("toast.rampDeletedMessage", { name: strip.name }),
+    actionLabel: t("common.undo"),
     duration: 6500,
     onAction: () => {
       if (appState.project !== ownerProject) return;
@@ -1546,7 +1639,11 @@ function applyPresetToStrip(presetId) {
   const project = appState.project;
   const strip = activeStrip();
   if (!preset || !strip) {
-    showToast({ type: "error", title: "Selecciona una rampa", message: "Abre o crea una rampa antes de aplicar una plantilla." });
+    showToast({
+      type: "error",
+      title: t("presets.noRampTitle"),
+      message: t("presets.noRampMessage"),
+    });
     return;
   }
   const index = project.strips.findIndex((item) => item.id === strip.id);
@@ -1565,8 +1662,11 @@ function applyPresetToStrip(presetId) {
   queueAutosave();
   showToast({
     type: "success",
-    title: "Plantilla aplicada",
-    message: `${preset.name} → ${applied.name}`,
+    title: t("presets.appliedTitle"),
+    message: t("presets.appliedMessage", {
+      preset: translatePreset(preset).name,
+      strip: applied.name,
+    }),
   });
 }
 
@@ -1595,7 +1695,11 @@ function resetGlobalAdjustments() {
   renderInspector();
   schedulePaletteRefresh();
   queueAutosave();
-  showToast({ type: "success", title: "Paleta restablecida", message: "Todos los ajustes globales volvieron a cero." });
+  showToast({
+    type: "success",
+    title: t("global.resetTitle"),
+    message: t("global.resetMessage"),
+  });
 }
 
 /* =========================================================
@@ -1616,7 +1720,7 @@ function showToast({ type = "success", title, message = "", actionLabel = "", on
       ${message ? `<div class="toast__message">${escapeHTML(message)}</div>` : ""}
     </div>
     ${actionLabel ? `<button class="toast__action" type="button">${escapeHTML(actionLabel)}</button>` : ""}
-    <button class="toast__close" type="button" aria-label="Cerrar aviso">${icon("x")}</button>
+    <button class="toast__close" type="button" aria-label="${t("toast.dismiss")}">${icon("x")}</button>
   `;
   toast.dataset.toastId = String(++toastId);
   els.toastStack.appendChild(toast);
@@ -1691,11 +1795,15 @@ function closeDialog(dialog) {
 function openPresetModal() {
   const strip = activeStrip();
   if (!strip) {
-    showToast({ type: "error", title: "Sin rampa activa", message: "Selecciona una rampa para aplicar una plantilla." });
+    showToast({
+      type: "error",
+      title: t("toast.noRampTitle"),
+      message: t("toast.noRampMessage"),
+    });
     return;
   }
   if (window.matchMedia("(max-width: 1120px)").matches) closeDrawers({ immediate: true });
-  els.presetSubtitle.innerHTML = `Selecciona un look para <strong>${escapeHTML(strip.name)}</strong>.`;
+  updatePresetSubtitle();
   if (!PRESET_CATEGORIES.includes(appState.presetCategory)) {
     appState.presetCategory = "Todos";
   }
@@ -1705,27 +1813,29 @@ function openPresetModal() {
 
 function renderPresetGallery() {
   const category = appState.presetCategory;
-  const presets = category === "Todos"
+  const sourcePresets = category === "Todos"
     ? RAMPS_PRESETS
     : RAMPS_PRESETS.filter((preset) => preset.category === category);
+  const presets = sourcePresets.map(translatePreset);
+  els.presetFilters.setAttribute("aria-label", t("presets.filterAria"));
 
   els.presetFilters.innerHTML = PRESET_CATEGORIES.map(
     (item) =>
-      `<button class="filter-chip${item === category ? " is-active" : ""}" type="button" data-category="${escapeHTML(item)}" aria-pressed="${item === category}">${escapeHTML(item)}</button>`,
+      `<button class="filter-chip${item === category ? " is-active" : ""}" type="button" data-category="${escapeHTML(item)}" aria-pressed="${item === category}">${escapeHTML(translatePresetCategory(item))}</button>`,
   ).join("");
 
-  els.presetCount.textContent = `${presets.length} ${presets.length === 1 ? "look" : "looks"}`;
+  els.presetCount.textContent = tPlural(presets.length, "presets.countOne", "presets.countMany", { count: presets.length });
   els.presetGrid.innerHTML = presets
     .map(
       (preset) => `
-        <button class="preset-card" type="button" data-preset="${escapeHTML(preset.id)}" title="Aplicar ${escapeHTML(preset.name)}">
+        <button class="preset-card" type="button" data-preset="${escapeHTML(preset.id)}" title="${escapeHTML(t("presets.applyTitle", { name: preset.name }))}">
           <span class="preset-card__preview">
             <canvas width="360" height="96" data-preset-preview="${escapeHTML(preset.id)}"></canvas>
             <span class="preset-card__action">${icon("plus")}</span>
           </span>
           <span class="preset-card__meta">
             <span class="preset-card__name">${escapeHTML(preset.name)}</span>
-            <span class="preset-card__tag">${escapeHTML(preset.category)}</span>
+            <span class="preset-card__tag">${escapeHTML(preset.categoryLabel)}</span>
           </span>
           <span class="preset-card__description">${escapeHTML(preset.description)}</span>
         </button>`,
@@ -1742,7 +1852,8 @@ function renderPresetGallery() {
 
 function openAtlasModal() {
   refreshAtlas();
-  els.atlasModalMeta.textContent = `${appState.project.atlasSize} × ${appState.project.atlasSize} px · PNG sRGB`;
+  const resolution = `${appState.project.atlasSize} × ${appState.project.atlasSize}`;
+  els.atlasModalMeta.textContent = t("atlas.modalMeta", { resolution });
   paintCanvasFromCanvas(els.atlasModalCanvas, els.atlasCanvas);
   updateAtlasMeta();
   if (!els.atlasModal.open) els.atlasModal.showModal();
@@ -1770,7 +1881,7 @@ async function saveProjectFile() {
           suggestedName: filename,
           types: [
             {
-              description: "Proyecto RampForge",
+              description: t("save.projectType"),
               accept: { "application/json": [".json"] },
             },
           ],
@@ -1780,21 +1891,21 @@ async function saveProjectFile() {
         await writable.close();
         showToast({
           type: "success",
-          title: "Archivo JSON guardado",
-          message: `${handle.name || filename} · ubicación elegida en el diálogo del sistema.`,
+          title: t("toast.jsonSavedTitle"),
+          message: t("toast.jsonSavedMessage", { filename: handle.name || filename }),
         });
         return;
       } catch (error) {
         if (error?.name === "AbortError") return;
-        console.warn("No se pudo usar el diálogo de guardado; se usará la descarga del navegador.", error);
+        console.warn("The native save dialog failed; falling back to a browser download.", error);
       }
     }
 
     downloadBlob(blob, filename);
     showToast({
       type: "success",
-      title: "Descarga de proyecto iniciada",
-      message: `${filename} va a la carpeta de descargas configurada en tu navegador.`,
+      title: t("toast.downloadStartedTitle"),
+      message: t("toast.downloadStartedMessage", { filename }),
       duration: 5600,
     });
   } finally {
@@ -1805,7 +1916,11 @@ async function saveProjectFile() {
 async function exportAtlasPNG() {
   if (appState.isExporting) return;
   if (appState.project.strips.length === 0) {
-    showToast({ type: "error", title: "Atlas vacío", message: "Añade al menos una rampa para exportar el PNG." });
+    showToast({
+      type: "error",
+      title: t("toast.colorEmptyTitle"),
+      message: t("toast.colorEmptyMessage"),
+    });
     return;
   }
 
@@ -1817,18 +1932,25 @@ async function exportAtlasPNG() {
     const blob = await new Promise((resolve, reject) => {
       canvas.toBlob((result) => {
         if (result) resolve(result);
-        else reject(new Error("No se pudo generar el PNG."));
+        else reject(new Error("The PNG could not be generated."));
       }, "image/png");
     });
     downloadBlob(blob, currentFileName("png"));
     showToast({
       type: "success",
-      title: "PNG exportado",
-      message: `${appState.project.atlasSize} × ${appState.project.atlasSize} px · ${formatBytes(blob.size)} · sRGB`,
+      title: t("toast.colorExportedTitle"),
+      message: t("toast.colorExportedMessage", {
+        resolution: appState.project.atlasSize,
+        size: formatBytes(blob.size),
+      }),
     });
   } catch (error) {
     console.error(error);
-    showToast({ type: "error", title: "Error de exportación", message: "No se pudo generar el archivo PNG." });
+    showToast({
+      type: "error",
+      title: t("toast.exportErrorTitle"),
+      message: t("toast.colorExportErrorMessage"),
+    });
   } finally {
     appState.isExporting = false;
     updateAtlasMeta();
@@ -1840,8 +1962,8 @@ async function exportPbrMaskPNG() {
   if (appState.project.strips.length === 0) {
     showToast({
       type: "error",
-      title: "Máscara vacía",
-      message: "Añade al menos una rampa para exportar la máscara PBR.",
+      title: t("toast.maskEmptyTitle"),
+      message: t("toast.maskEmptyMessage"),
     });
     return;
   }
@@ -1863,16 +1985,16 @@ async function exportPbrMaskPNG() {
     downloadBlob(blob, `${slugify(appState.project.name)}_pbr_${mask.size}.png`);
     showToast({
       type: "success",
-      title: "Máscara PBR exportada",
-      message: `${mask.width} × ${mask.height} · RGBA8 lineal · R rough / G metal / B emission / A opacity`,
+      title: t("toast.maskExportedTitle"),
+      message: t("toast.maskExportedMessage", { width: mask.width, height: mask.height }),
       duration: 6000,
     });
   } catch (error) {
     console.error(error);
     showToast({
       type: "error",
-      title: "Error de exportación",
-      message: "No se pudo generar la máscara PBR.",
+      title: t("toast.exportErrorTitle"),
+      message: t("toast.maskErrorMessage"),
     });
   } finally {
     appState.isPbrExporting = false;
@@ -1893,15 +2015,19 @@ async function importProjectFile(file) {
     saveLocalNow();
     showToast({
       type: "success",
-      title: "Proyecto cargado",
-      message: `${project.strips.length} ${project.strips.length === 1 ? "rampa" : "rampas"} · ${project.name}`,
+      title: t("toast.projectLoadedTitle"),
+      message: t("toast.projectLoadedMessage", {
+        count: project.strips.length,
+        rampWord: t(project.strips.length === 1 ? "common.rampWordOne" : "common.rampWordMany"),
+        name: project.name,
+      }),
     });
   } catch (error) {
     console.warn(error);
     showToast({
       type: "error",
-      title: "JSON no válido",
-      message: "El archivo no contiene un proyecto RampForge reconocible.",
+      title: t("toast.invalidJsonTitle"),
+      message: t("toast.invalidJsonMessage"),
       duration: 5500,
     });
   } finally {
@@ -1910,12 +2036,16 @@ async function importProjectFile(file) {
 }
 
 function resetDemoProject() {
-  const confirmed = window.confirm("¿Restaurar el proyecto de demostración? Los cambios actuales se reemplazarán.");
+  const confirmed = window.confirm(t("confirm.restoreDemo"));
   if (!confirmed) return;
   const demo = createDefaultProject();
   setProject(demo, { save: false });
   saveLocalNow();
-  showToast({ type: "success", title: "Demo restaurada", message: "La paleta de estudio original está de vuelta." });
+  showToast({
+    type: "success",
+    title: t("toast.demoRestoredTitle"),
+    message: t("toast.demoRestoredMessage"),
+  });
 }
 
 /* =========================================================
@@ -2035,6 +2165,12 @@ function bindEvents() {
     }
   });
   els.btnSave.addEventListener("click", saveProjectFile);
+  els.btnLanguage.addEventListener("click", () => {
+    toggleLanguage();
+  });
+  window.addEventListener("rampforge:languagechange", () => {
+    refreshLanguageUi();
+  });
   els.btnImport.addEventListener("click", () => els.importFile.click());
   els.importFile.addEventListener("change", () => importProjectFile(els.importFile.files?.[0]));
   els.btnExportAtlas.addEventListener("click", exportAtlasPNG);
@@ -2359,8 +2495,8 @@ function handleInspectorInput(event) {
     const hint = target.parentElement?.querySelector(".slider-field__hint");
     if (hint && metric) {
       hint.textContent = getEffectiveAtlasColumns(appState.project) > 1
-        ? `${metric.width}px de ancho · ${Math.round(metric.percentage)}% de su columna. El resto de la pila se redistribuye.`
-        : `Ancho completo · ${Math.round(metric.percentage)}% del atlas. El resto de rampas se redistribuye.`;
+        ? t("ramp.cellHint", { width: metric.width, percentage: Math.round(metric.percentage) })
+        : t("ramp.singleColumnHint", { percentage: Math.round(metric.percentage) });
     }
     schedulePaletteRefresh();
     queueAutosave();
@@ -2374,7 +2510,7 @@ function handleInspectorInput(event) {
     if (output) output.textContent = String(strip.steps);
     const note = target.closest(".slider-field")?.nextElementSibling;
     if (note) {
-      note.innerHTML = `${icon("grid")}<span>Posterización en ${strip.steps} niveles. Perfecta para cel-shading y looks de cómic.</span>`;
+      note.innerHTML = `${icon("grid")}<span>${t("ramp.stepsNote", { count: strip.steps })}</span>`;
     }
     drawRampGradient();
     schedulePaletteRefresh();
@@ -2429,10 +2565,10 @@ function handleInspectorInput(event) {
   if (target.id === "ramp-name") {
     strip.name = target.value.slice(0, 48);
     const title = $("#ramp-title-text", els.inspectorContent);
-    if (title) title.textContent = strip.name || "Rampa sin nombre";
+    if (title) title.textContent = strip.name || t("ramp.untitled");
     const selectedItem = $$("[data-strip-id]", els.rampList).find((item) => item.dataset.stripId === strip.id);
     const nameNode = selectedItem?.querySelector(".ramp-item__name");
-    if (nameNode) nameNode.textContent = strip.name || "Rampa sin nombre";
+    if (nameNode) nameNode.textContent = strip.name || t("ramp.untitled");
     queueAutosave();
   }
 }
@@ -2491,8 +2627,8 @@ function handleInspectorChange(event) {
     if (clipped && scale < previousScale) {
       showToast({
         type: "info",
-        title: "Emisión ajustada",
-        message: `Las emisiones superiores a ${scale}× se han limitado a la nueva escala.`,
+        title: t("toast.emissionClippedTitle"),
+        message: t("toast.emissionClippedMessage", { scale }),
       });
     }
     return;
@@ -2521,7 +2657,9 @@ function handleInspectorChange(event) {
   }
 
   if (target.id === "ramp-name") {
-    strip.name = (target.value.trim() || `Rampa ${appState.project.strips.indexOf(strip) + 1}`).slice(0, 48);
+    strip.name = (target.value.trim() || t("ramp.fallback", {
+      index: appState.project.strips.indexOf(strip) + 1,
+    })).slice(0, 48);
     target.value = strip.name;
     const title = $("#ramp-title-text", els.inspectorContent);
     if (title) title.textContent = strip.name;
@@ -2624,14 +2762,14 @@ function handleInspectorPointerDown(event) {
 }
 
 function setMesh(type) {
-  if (!MESH_LABELS[type]) return;
+  if (!MESH_LABEL_KEYS[type]) return;
   appState.mesh = type;
   $$(".mesh-tab", els.meshTabs).forEach((button) => {
     const active = button.dataset.mesh === type;
     button.classList.toggle("is-active", active);
     button.setAttribute("aria-selected", active ? "true" : "false");
   });
-  els.currentMeshLabel.textContent = MESH_LABELS[type];
+  updateCurrentMeshLabel();
   viewer?.setMesh(type);
 }
 
@@ -2666,13 +2804,13 @@ function bootViewer() {
     refreshPbrMask();
     window.setTimeout(() => els.viewerLoader.classList.add("is-hidden"), 260);
   } catch (error) {
-    console.error("No se pudo inicializar Three.js:", error);
+    console.error("Could not initialize Three.js:", error);
     els.viewerLoader.classList.add("is-hidden");
     els.webglFallback.hidden = false;
     showToast({
       type: "error",
-      title: "Visor 3D no disponible",
-      message: "La app funciona, pero este navegador no pudo iniciar WebGL.",
+      title: t("toast.webglTitle"),
+      message: t("toast.webglMessage"),
       duration: 6500,
     });
   }
@@ -2682,6 +2820,10 @@ function bootViewer() {
    Init
    ========================================================= */
 function init() {
+  initLanguage();
+  updateLanguageButton();
+  if (els.metaDescription) els.metaDescription.content = t("app.metaDescription");
+
   const saved = readStoredProject();
   appState.project = saved || createDefaultProject();
   appState.selectedStripId = appState.project.strips[0]?.id || null;
@@ -2691,6 +2833,7 @@ function init() {
 
   els.projectName.value = appState.project.name;
   document.title = `RampForge — ${appState.project.name}`;
+  updateCurrentMeshLabel();
   ensurePbrMaskCanvas();
   bindEvents();
   renderAll();

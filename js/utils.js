@@ -400,7 +400,7 @@ export async function rgbaToPngBlob(data, width, height) {
   const image = new Uint8ClampedArray(data);
   const expected = width * height * 4;
   if (image.length !== expected) {
-    throw new Error("El buffer RGBA no coincide con el tamaño de la imagen.");
+    throw new Error("The RGBA buffer does not match the image size.");
   }
 
   const stride = width * 4;

@@ -2,6 +2,8 @@
 
 SPA de escritorio para diseñar, previsualizar y exportar **texture atlases de degradados** destinados a materiales 3D estilizados, hand-painted y cel-shading.
 
+La interfaz está disponible en **español e inglés** y se puede cambiar en cualquier momento desde el botón de idioma de la cabecera.
+
 La aplicación funciona sin build step. Three.js, las fuentes y todos los recursos están incluidos localmente.
 
 ## Ejecutar
@@ -23,6 +25,13 @@ python -m http.server 5173
 ```
 
 > Es necesario usar un servidor HTTP para respetar las restricciones de módulos ES6 del navegador. Abrir `index.html` con doble clic puede bloquear los imports.
+
+## Idioma
+
+- El botón **ES / EN** de la cabecera alterna entre español e inglés sin recargar la página.
+- Al arrancar, la app usa el idioma guardado en `localStorage` (`rampforge.language`); si no existe, toma el idioma del navegador y cae en español como último recurso.
+- Los textos generados (nombre del proyecto demo, rampas nuevas, plantillas) se crean en el idioma activo. Los nombres de proyecto y de rampa escritos por el usuario se conservan tal cual.
+- La preferencia de idioma es independiente del proyecto JSON y del autoguardado; los archivos guardados no incluyen ajustes de idioma.
 
 ## Funciones principales
 
@@ -111,6 +120,7 @@ python -m http.server 5173
 ├── js/
 │   ├── app.js              Estado, UI, interacciones, exportación e importación
 │   ├── atlas.js            Rasterizador de rampas y atlas
+│   ├── i18n.js             Mensajes ES/EN, preferencia y traducción de la UI
 │   ├── presets.js          Biblioteca de materiales
 │   ├── project.js          Modelo, defaults y normalización JSON
 │   ├── three-viewer.js     Visor Three.js, luces, PBR y remapeo de UV
