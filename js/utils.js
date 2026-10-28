@@ -300,3 +300,133 @@ export function getLargestGap(stops) {
     size: best.size,
   };
 }
+
+/* =========================================================
+   Exact RGBA PNG encoder for linear data textures
+   ========================================================= */
+const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    table[index] = value >>> 0;
+  }
+  return table;
+})();
+
+function crc32Parts(parts) {
+  let crc = 0xffffffff;
+  parts.forEach((part) => {
+    for (let index = 0; index < part.length; index += 1) {
+      crc = CRC_TABLE[(crc ^ part[index]) & 0xff] ^ (crc >>> 8);
+    }
+  });
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function adler32(bytes) {
+  let a = 1;
+  let b = 0;
+  for (let index = 0; index < bytes.length; index += 1) {
+    a = (a + bytes[index]) % 65521;
+    b = (b + a) % 65521;
+  }
+  return ((b << 16) | a) >>> 0;
+}
+
+function makeChunk(type, data) {
+  const typeBytes = new TextEncoder().encode(type);
+  const chunk = new Uint8Array(12 + data.length);
+  const view = new DataView(chunk.buffer);
+  view.setUint32(0, data.length, false);
+  chunk.set(typeBytes, 4);
+  chunk.set(data, 8);
+  view.setUint32(8 + data.length, crc32Parts([typeBytes, data]), false);
+  return chunk;
+}
+
+/** Fallback zlib stream using uncompressed DEFLATE blocks. */
+function zlibUncompressed(data) {
+  const blockCount = Math.max(1, Math.ceil(data.length / 65535));
+  const output = new Uint8Array(2 + data.length + blockCount * 5 + 4);
+  output[0] = 0x78;
+  output[1] = 0x01;
+  let offset = 2;
+
+  for (let block = 0; block < blockCount; block += 1) {
+    const start = block * 65535;
+    const end = Math.min(data.length, start + 65535);
+    const length = end - start;
+    const final = block === blockCount - 1;
+    output[offset] = final ? 0x01 : 0x00;
+    output[offset + 1] = length & 0xff;
+    output[offset + 2] = (length >>> 8) & 0xff;
+    const inverse = (~length) & 0xffff;
+    output[offset + 3] = inverse & 0xff;
+    output[offset + 4] = (inverse >>> 8) & 0xff;
+    output.set(data.subarray(start, end), offset + 5);
+    offset += 5 + length;
+  }
+
+  const checksum = adler32(data);
+  output[offset] = (checksum >>> 24) & 0xff;
+  output[offset + 1] = (checksum >>> 16) & 0xff;
+  output[offset + 2] = (checksum >>> 8) & 0xff;
+  output[offset + 3] = checksum & 0xff;
+  return output.subarray(0, offset + 4);
+}
+
+async function zlibCompress(data) {
+  if (typeof CompressionStream !== "function") {
+    return zlibUncompressed(data);
+  }
+  try {
+    const stream = new Blob([data]).stream().pipeThrough(new CompressionStream("deflate"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  } catch {
+    return zlibUncompressed(data);
+  }
+}
+
+/**
+ * Encodes straight-alpha RGBA bytes to a lossless PNG without canvas
+ * premultiplication. Used for data textures where channel values must remain
+ * byte-exact even when opacity is below 1.
+ */
+export async function rgbaToPngBlob(data, width, height) {
+  const image = new Uint8ClampedArray(data);
+  const expected = width * height * 4;
+  if (image.length !== expected) {
+    throw new Error("El buffer RGBA no coincide con el tamaño de la imagen.");
+  }
+
+  const stride = width * 4;
+  const scanlines = new Uint8Array((stride + 1) * height);
+  for (let y = 0; y < height; y += 1) {
+    const target = y * (stride + 1);
+    scanlines[target] = 0;
+    scanlines.set(image.subarray(y * stride, (y + 1) * stride), target + 1);
+  }
+
+  const header = new Uint8Array(13);
+  const headerView = new DataView(header.buffer);
+  headerView.setUint32(0, width, false);
+  headerView.setUint32(4, height, false);
+  header[8] = 8;
+  header[9] = 6;
+  header[10] = 0;
+  header[11] = 0;
+  header[12] = 0;
+
+  const compressed = await zlibCompress(scanlines);
+  const chunks = [
+    PNG_SIGNATURE,
+    makeChunk("IHDR", header),
+    makeChunk("IDAT", compressed),
+    makeChunk("IEND", new Uint8Array(0)),
+  ];
+  return new Blob(chunks, { type: "image/png" });
+}

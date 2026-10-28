@@ -63,23 +63,43 @@ python -m http.server 5173
   - La implementación **remapela las coordenadas UV originales de cada malla**, sin recortar la textura ni perder calidad de filtrado.
   - La región UV es independiente del PNG exportado: es una herramienta de inspección del material.
 
+- **Máscara PBR empaquetada**
+  - Pestaña **PBR** en el inspector con roughness, metallic, emission y opacity constantes por rampa.
+  - Segunda textura RGB(A) alineada con las mismas celdas y UV que el atlas de color.
+  - Canales: `R = roughness`, `G = metallic`, `B = emission normalizada`, `A = opacity`.
+  - Vista previa por canal (RGBA / R / G / B / A).
+  - Resolución independiente de la máscara: 128², 256², 512² o 1024².
+  - Escala de emisión configurable (`1×`, `2×`, `4×`, `8×`) para recuperar valores HDR en el shader.
+  - Exportación PNG lineal con alpha directo, sin premultiplicar.
+  - El visor Three.js usa la máscara en tiempo real para roughness, metalness, emisión y transparencia.
+  - [Guía de integración con Godot 4 y shader de ejemplo](./examples/godot/README.md).
+
 - **Plantillas de material**
   - 17 presets (madera, metales, cristal, cuero, piedra, tela, piel, hielo, neón y estilos Toon).
   - Filtros por categoría y vista previa real de cada degradado.
-  - Aplicación sobre la rampa activa conservando nombre, altura y orientación.
+  - Aplicación sobre la rampa activa conservando nombre, altura, orientación y parámetros PBR.
 
 - **Proyecto y exportación**
-  - Exportación PNG a la resolución activa del atlas.
-  - Guardado/carga del proyecto completo en JSON (`* .rampforge.json`).
-  - Autoguardado en `localStorage`.
+  - Exportación del atlas de color PNG a la resolución activa.
+  - Exportación de la máscara PBR lineal RGBA a la resolución elegida.
+  - Guardado/carga del proyecto completo en JSON (`* .rampforge.json`), incluidos los valores PBR.
+  - **Guardar JSON** abre el diálogo nativo de guardado en navegadores compatibles (Chrome/Edge); si no está disponible, descarga el archivo.
+  - Autoguardado en `localStorage`, independiente del archivo JSON.
   - Restauración de la demo desde el pie del panel izquierdo.
+
+## Guardado
+
+- **Guardar JSON** está en la cabecera y escribe el proyecto en disco. En Chrome/Edge se abre el diálogo nativo para elegir la ubicación; en navegadores sin File System Access se inicia una descarga.
+- **Cargar** está en la cabecera y abre un selector de archivo JSON.
+- La exportación de texturas está en el panel **Atlas generado**: **Color PNG** y **Máscara PBR**.
+- El indicador **Autoguardado** de la cabecera se refiere únicamente a la copia de seguridad del proyecto en el `localStorage` del navegador. No crea archivos.
 
 ## Atajos
 
 | Atajo | Acción |
 | --- | --- |
-| `Ctrl / Cmd + S` | Descargar proyecto JSON |
-| `Ctrl / Cmd + Shift + E` | Exportar atlas PNG |
+| `Ctrl / Cmd + S` | Guardar proyecto JSON en disco |
+| `Ctrl / Cmd + Shift + E` | Exportar atlas de color PNG |
 | `Esc` | Cerrar drawers o diálogos |
 
 ## Estructura
@@ -93,9 +113,10 @@ python -m http.server 5173
 │   ├── atlas.js            Rasterizador de rampas y atlas
 │   ├── presets.js          Biblioteca de materiales
 │   ├── project.js          Modelo, defaults y normalización JSON
-│   ├── three-viewer.js     Visor Three.js, luces y remapeo de UV
-│   └── utils.js            Color, curvas, fechas, descargas y helpers
+│   ├── three-viewer.js     Visor Three.js, luces, PBR y remapeo de UV
+│   └── utils.js            Color, curvas, encoder PNG RGBA y helpers
 ├── assets/favicon.svg
+├── examples/godot/         Shader Godot 4 + guía de importación
 ├── fonts/                  Manrope + IBM Plex Mono (OFL)
 ├── vendor/three/           Three.js r180 + addons (MIT)
 └── server.mjs              Servidor estático local sin dependencias
@@ -114,6 +135,8 @@ El archivo exportado incluye el proyecto completo:
     "name": "Paleta de Estudio",
     "atlasSize": 1024,
     "atlasColumns": 2,
+    "pbrMaskSize": 256,
+    "emissionScale": 4,
     "globalAdjust": {
       "hue": 0,
       "saturation": 0,
@@ -131,6 +154,12 @@ El archivo exportado incluye el proyecto completo:
         "interpolation": "smooth",
         "curve": { "in": 0.14, "out": 0.9 },
         "steps": 4,
+        "pbr": {
+          "roughness": 0.8,
+          "metallic": 0,
+          "emission": 0,
+          "opacity": 1
+        },
         "stops": [
           { "id": "stop_...", "color": "#160c08", "pos": 0 }
         ]
@@ -140,7 +169,20 @@ El archivo exportado incluye el proyecto completo:
 }
 ```
 
-La carga normaliza valores, valida colores e IDs y tolera proyectos serializados previamente.
+La carga normaliza valores, valida colores e IDs y tolera proyectos serializados previamente. Los proyectos antiguos reciben valores PBR por defecto y una máscara de 256².
+
+## Máscara PBR y Godot
+
+La máscara se exporta como PNG RGBA lineal, con la misma cuadrícula y los mismos UV que el atlas de color:
+
+```text
+R = roughness       G = metallic
+B = emisión / escala  A = opacidad
+```
+
+La emisión se normaliza para que quepa en 8 bits. Con la escala por defecto `4×`, una emisión `2.0` se guarda como `B = 0.5` (`128/255`) y el shader la recupera multiplicando por `4.0`. Esto genera valores HDR mayores que 1 sin tocar el albedo.
+
+La guía completa de importación, el shader y la conexión equivalente en VisualShader están en [`examples/godot/README.md`](./examples/godot/README.md).
 
 ## Créditos
 

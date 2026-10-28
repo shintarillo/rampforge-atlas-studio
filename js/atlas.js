@@ -124,8 +124,12 @@ export function getEffectiveAtlasColumns(project) {
  * Computes independent vertical column stacks. Every column fills the full
  * atlas height; each ramp's relative weight is normalized inside its column.
  */
-export function computeAtlasLayout(project) {
-  const size = clamp(Math.round(Number(project?.atlasSize) || 1024), 16, 4096);
+export function computeAtlasLayout(project, overrideSize = null) {
+  const requestedSize = Number(overrideSize);
+  const sourceSize = Number.isFinite(requestedSize) && requestedSize > 0
+    ? requestedSize
+    : Number(project?.atlasSize) || 1024;
+  const size = clamp(Math.round(sourceSize), 16, 4096);
   const strips = Array.isArray(project?.strips) ? project.strips : [];
   const columns = getEffectiveAtlasColumns(project);
   if (strips.length === 0 || columns === 0) {
@@ -280,6 +284,83 @@ export function renderAtlasToCanvas(canvas, project, options = {}) {
 }
 
 const imageCache = new WeakMap();
+
+/**
+ * Builds the straight-alpha RGBA PBR mask at the project's mask resolution.
+ * Channels are: R roughness, G metallic, B normalized emission, A opacity.
+ */
+export function createPbrMaskData(project, options = {}) {
+  const requestedSize = Number(options.size) || Number(project?.pbrMaskSize) || 256;
+  const size = clamp(Math.round(requestedSize), 16, 4096);
+  const layout = computeAtlasLayout(project, size);
+  const data = new Uint8ClampedArray(size * size * 4);
+  const emissionScale = clamp(Number(project?.emissionScale) || 4, 1, 16);
+
+  layout.cells.forEach((cell) => {
+    if (cell.width <= 0 || cell.height <= 0) return;
+    const strip = project.strips[cell.index];
+    const pbr = strip?.pbr || {};
+    const r = Math.round(clamp(Number(pbr.roughness ?? 0.72), 0, 1) * 255);
+    const g = Math.round(clamp(Number(pbr.metallic ?? 0), 0, 1) * 255);
+    const b = Math.round(clamp(Number(pbr.emission ?? 0) / emissionScale, 0, 1) * 255);
+    const a = Math.round(clamp(Number(pbr.opacity ?? 1), 0, 1) * 255);
+    const row = new Uint8ClampedArray(cell.width * 4);
+
+    for (let x = 0; x < cell.width; x += 1) {
+      const offset = x * 4;
+      row[offset] = r;
+      row[offset + 1] = g;
+      row[offset + 2] = b;
+      row[offset + 3] = a;
+    }
+    for (let y = cell.top; y < cell.bottom; y += 1) {
+      data.set(row, (y * size + cell.left) * 4);
+    }
+  });
+
+  return {
+    data,
+    width: size,
+    height: size,
+    size,
+    cells: layout.cells,
+    columns: layout.columns,
+    emissionScale,
+  };
+}
+
+/**
+ * Paints a preview of the PBR mask. Use view="raw" for the true packed data or
+ * one of the single channels for inspection.
+ */
+export function renderPbrMaskToCanvas(canvas, project, options = {}) {
+  if (!canvas) return null;
+  const mask = createPbrMaskData(project, options);
+  const view = options.view || "rgba";
+  const source = mask.data;
+  let pixels = source;
+
+  if (["r", "g", "b", "a"].includes(view)) {
+    const channel = { r: 0, g: 1, b: 2, a: 3 }[view];
+    pixels = new Uint8ClampedArray(source.length);
+    for (let index = 0; index < source.length; index += 4) {
+      const value = source[index + channel];
+      pixels[index] = value;
+      pixels[index + 1] = value;
+      pixels[index + 2] = value;
+      pixels[index + 3] = 255;
+    }
+  }
+
+  if (canvas.width !== mask.width) canvas.width = mask.width;
+  if (canvas.height !== mask.height) canvas.height = mask.height;
+  const context = canvas.getContext("2d", { alpha: true });
+  if (!context) return mask;
+  const image = context.createImageData(mask.width, mask.height);
+  image.data.set(pixels);
+  context.putImageData(image, 0, 0);
+  return mask;
+}
 
 export function paintCanvasFromCanvas(target, source) {
   if (!target || !source) return;

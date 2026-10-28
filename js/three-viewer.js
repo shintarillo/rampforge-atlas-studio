@@ -11,11 +11,15 @@ export const MESH_LABELS = {
 };
 
 export class ThreePreview {
-  constructor({ container, canvas, textureCanvas, hasTexture = true }) {
+  constructor({ container, canvas, textureCanvas, hasTexture = true, pbrCanvas = null }) {
     this.container = container;
     this.canvas = canvas;
     this.textureCanvas = textureCanvas;
     this.hasTexture = hasTexture;
+    this.pbrCanvas = pbrCanvas;
+    this.pbrEmissionScale = 4;
+    this.pbrEnabled = false;
+    this.pbrHasAlpha = false;
     this.currentMesh = "cube";
     this.currentShading = "pbr";
     this.autoRotate = false;
@@ -122,6 +126,19 @@ export class ThreePreview {
     this.texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
     this.texture.needsUpdate = true;
 
+    this.pbrTexture = new THREE.CanvasTexture(this.pbrCanvas || this._fallbackPbrCanvas());
+    this.pbrTexture.colorSpace = THREE.NoColorSpace;
+    this.pbrTexture.minFilter = THREE.NearestFilter;
+    this.pbrTexture.magFilter = THREE.NearestFilter;
+    this.pbrTexture.generateMipmaps = false;
+    this.pbrTexture.needsUpdate = true;
+
+    this.pbrUniforms = {
+      uPbrMap: { value: this.pbrTexture },
+      uPbrEmissionScale: { value: this.pbrEmissionScale },
+      uPbrEnabled: { value: 0 },
+    };
+
     this.materials = {
       pbr: new THREE.MeshStandardMaterial({
         name: "RampForge PBR",
@@ -140,6 +157,89 @@ export class ThreePreview {
         side: THREE.DoubleSide,
       }),
     };
+
+    this._installPbrShaders(this.materials.pbr, true);
+    this._installPbrShaders(this.materials.toon, false);
+  }
+
+  _fallbackPbrCanvas() {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#b70000";
+    context.fillRect(0, 0, 1, 1);
+    return canvas;
+  }
+
+  _installPbrShaders(material, supportsSurfaceChannels) {
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uPbrMap = this.pbrUniforms.uPbrMap;
+      shader.uniforms.uPbrEmissionScale = this.pbrUniforms.uPbrEmissionScale;
+      shader.uniforms.uPbrEnabled = this.pbrUniforms.uPbrEnabled;
+
+      let fragment = `uniform sampler2D uPbrMap;
+uniform float uPbrEmissionScale;
+uniform float uPbrEnabled;
+${shader.fragmentShader}`;
+
+      fragment = fragment
+        .replace(
+          "#include <map_fragment>",
+          `#include <map_fragment>
+vec4 pbrMaskData = vec4(0.72, 0.0, 0.0, 1.0);
+#ifdef USE_MAP
+  if (uPbrEnabled > 0.5) pbrMaskData = texture2D(uPbrMap, vMapUv);
+#endif`,
+        )
+        .replace(
+          "#include <alphamap_fragment>",
+          `#include <alphamap_fragment>
+diffuseColor.a *= mix(1.0, pbrMaskData.a, uPbrEnabled);`,
+        )
+        .replace(
+          "#include <emissivemap_fragment>",
+          `#include <emissivemap_fragment>
+totalEmissiveRadiance += diffuseColor.rgb * pbrMaskData.b * uPbrEmissionScale * uPbrEnabled;`,
+        );
+
+      if (supportsSurfaceChannels) {
+        fragment = fragment
+          .replace(
+            "#include <roughnessmap_fragment>",
+            "float roughnessFactor = mix( roughness, clamp( pbrMaskData.r, 0.04, 1.0 ), uPbrEnabled );",
+          )
+          .replace(
+            "#include <metalnessmap_fragment>",
+            "float metalnessFactor = mix( metalness, clamp( pbrMaskData.g, 0.0, 1.0 ), uPbrEnabled );",
+          );
+      }
+
+      shader.fragmentShader = fragment;
+    };
+    material.customProgramCacheKey = () => `rampforge-pbr-${supportsSurfaceChannels ? "surface" : "toon"}`;
+  }
+
+  setPbrMask(canvas, { enabled = true, emissionScale = 4, hasAlpha = false } = {}) {
+    if (!this.pbrTexture) return;
+    if (canvas) {
+      this.pbrCanvas = canvas;
+      this.pbrTexture.image = canvas;
+      this.pbrTexture.needsUpdate = true;
+    }
+    this.pbrEnabled = Boolean(enabled);
+    this.pbrEmissionScale = Number(emissionScale) || 4;
+    this.pbrHasAlpha = Boolean(hasAlpha);
+    this.pbrUniforms.uPbrEnabled.value = this.pbrEnabled ? 1 : 0;
+    this.pbrUniforms.uPbrEmissionScale.value = this.pbrEmissionScale;
+
+    [this.materials.pbr, this.materials.toon].forEach((material) => {
+      if (material.transparent !== this.pbrHasAlpha) {
+        material.transparent = this.pbrHasAlpha;
+        material.depthWrite = !this.pbrHasAlpha;
+        material.needsUpdate = true;
+      }
+    });
   }
 
   _createToonGradient() {
@@ -397,6 +497,7 @@ export class ThreePreview {
     this.materials?.toon.dispose();
     this.materials?.toon.gradientMap?.dispose();
     this.texture?.dispose();
+    this.pbrTexture?.dispose();
     this.environmentTarget?.dispose();
     this.renderer?.dispose();
   }

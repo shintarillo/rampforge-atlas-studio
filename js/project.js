@@ -10,7 +10,27 @@ const DEFAULT_ADJUSTMENTS = {
   tint: 0,
 };
 
+export const PBR_MASK_SIZES = [128, 256, 512, 1024];
+export const EMISSION_SCALES = [1, 2, 4, 8];
+export const DEFAULT_PBR = Object.freeze({
+  roughness: 0.72,
+  metallic: 0,
+  emission: 0,
+  opacity: 1,
+});
+
 const isFiniteNumber = (value) => value !== "" && value !== null && Number.isFinite(Number(value));
+
+export function normalizePbr(input, emissionScale = 4) {
+  const source = input && typeof input === "object" ? input : {};
+  const read = (value, fallback) => (isFiniteNumber(value) ? Number(value) : fallback);
+  return {
+    roughness: clamp(read(source.roughness, DEFAULT_PBR.roughness), 0, 1),
+    metallic: clamp(read(source.metallic, DEFAULT_PBR.metallic), 0, 1),
+    emission: clamp(read(source.emission, DEFAULT_PBR.emission), 0, emissionScale),
+    opacity: clamp(read(source.opacity, DEFAULT_PBR.opacity), 0, 1),
+  };
+}
 
 function normalizeName(value, fallback) {
   const name = typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
@@ -27,6 +47,7 @@ export function makeStop(color = "#808080", pos = 0) {
 
 export function stripFromPreset(preset, overrides = {}) {
   if (!preset) return createBlankStrip(overrides);
+  const emissionScale = clamp(Number(overrides.emissionScale) || 4, 1, 16);
   return {
     id: overrides.id || uid("ramp"),
     name: overrides.name || preset.name,
@@ -38,12 +59,14 @@ export function stripFromPreset(preset, overrides = {}) {
       out: clamp(Number(preset.curve?.out ?? 1), 0, 1),
     },
     steps: clamp(Math.round(Number(preset.steps) || 4), 2, 16),
+    pbr: normalizePbr(overrides.pbr || preset.pbr, emissionScale),
     stops: preset.stops.map((stop) => makeStop(stop.color, stop.pos)),
   };
 }
 
 export function createBlankStrip(overrides = {}) {
   const name = normalizeName(overrides.name, "Nueva rampa");
+  const emissionScale = clamp(Number(overrides.emissionScale) || 4, 1, 16);
   return {
     id: overrides.id || uid("ramp"),
     name,
@@ -55,6 +78,7 @@ export function createBlankStrip(overrides = {}) {
       out: clamp(Number(overrides.curve?.out ?? 0.92), 0, 1),
     },
     steps: clamp(Math.round(Number(overrides.steps) || 4), 2, 16),
+    pbr: normalizePbr(overrides.pbr, emissionScale),
     stops:
       Array.isArray(overrides.stops) && overrides.stops.length >= 2
         ? overrides.stops.map((stop) => makeStop(stop.color, stop.pos))
@@ -81,12 +105,48 @@ export function cloneStrip(strip, overrides = {}) {
 
 export function createDefaultProject() {
   const definitions = [
-    { preset: "wood-warm", name: "Madera cálida", weight: 1.12, orientation: "horizontal" },
-    { preset: "gold-polished", name: "Oro pulido", weight: 0.98, orientation: "horizontal" },
-    { preset: "crystal-prism", name: "Cristal prismático", weight: 0.86, orientation: "vertical" },
-    { preset: "leather-worn", name: "Cuero envejecido", weight: 1.06, orientation: "horizontal" },
-    { preset: "volcanic-stone", name: "Piedra volcánica", weight: 1.14, orientation: "horizontal" },
-    { preset: "fabric-olive", name: "Tela oliva", weight: 0.96, orientation: "vertical" },
+    {
+      preset: "wood-warm",
+      name: "Madera cálida",
+      weight: 1.12,
+      orientation: "horizontal",
+      pbr: { roughness: 0.8, metallic: 0, emission: 0, opacity: 1 },
+    },
+    {
+      preset: "gold-polished",
+      name: "Oro pulido",
+      weight: 0.98,
+      orientation: "horizontal",
+      pbr: { roughness: 0.27, metallic: 1, emission: 0, opacity: 1 },
+    },
+    {
+      preset: "crystal-prism",
+      name: "Cristal prismático",
+      weight: 0.86,
+      orientation: "vertical",
+      pbr: { roughness: 0.12, metallic: 0.12, emission: 0.8, opacity: 1 },
+    },
+    {
+      preset: "leather-worn",
+      name: "Cuero envejecido",
+      weight: 1.06,
+      orientation: "horizontal",
+      pbr: { roughness: 0.74, metallic: 0, emission: 0, opacity: 1 },
+    },
+    {
+      preset: "volcanic-stone",
+      name: "Piedra volcánica",
+      weight: 1.14,
+      orientation: "horizontal",
+      pbr: { roughness: 0.92, metallic: 0.03, emission: 0.18, opacity: 1 },
+    },
+    {
+      preset: "fabric-olive",
+      name: "Tela oliva",
+      weight: 0.96,
+      orientation: "vertical",
+      pbr: { roughness: 0.87, metallic: 0, emission: 0, opacity: 1 },
+    },
   ];
 
   const strips = definitions.map((definition) => {
@@ -95,6 +155,7 @@ export function createDefaultProject() {
       name: definition.name,
       weight: definition.weight,
       orientation: definition.orientation,
+      pbr: definition.pbr,
     });
   });
 
@@ -103,6 +164,8 @@ export function createDefaultProject() {
     name: "Paleta de Estudio",
     atlasSize: 1024,
     atlasColumns: 2,
+    pbrMaskSize: 256,
+    emissionScale: 4,
     globalAdjust: { ...DEFAULT_ADJUSTMENTS },
     strips,
   };
@@ -155,6 +218,13 @@ export function normalizeProject(input) {
     throw new Error("El proyecto no contiene una lista de rampas.");
   }
 
+  const emissionScale = EMISSION_SCALES.includes(Number(source.emissionScale))
+    ? Number(source.emissionScale)
+    : 4;
+  const pbrMaskSize = PBR_MASK_SIZES.includes(Number(source.pbrMaskSize))
+    ? Number(source.pbrMaskSize)
+    : 256;
+
   const usedStripIds = new Set();
   const strips = source.strips
     .filter((strip) => strip && typeof strip === "object")
@@ -183,6 +253,7 @@ export function normalizeProject(input) {
           2,
           16,
         ),
+        pbr: normalizePbr(strip.pbr, emissionScale),
         stops: normalizeStops(strip.stops),
       };
     });
@@ -205,6 +276,8 @@ export function normalizeProject(input) {
     name: normalizeName(source.name, "Proyecto sin título"),
     atlasSize,
     atlasColumns,
+    pbrMaskSize,
+    emissionScale,
     globalAdjust: {
       hue: clamp(isFiniteNumber(adjustments.hue) ? Number(adjustments.hue) : 0, -180, 180),
       saturation: clamp(isFiniteNumber(adjustments.saturation) ? Number(adjustments.saturation) : 0, -100, 100),

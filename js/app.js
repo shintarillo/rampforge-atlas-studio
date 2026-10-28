@@ -3,7 +3,6 @@ import {
   clamp,
   deepClone,
   downloadBlob,
-  downloadText,
   escapeHTML,
   formatBytes,
   formatSigned,
@@ -11,25 +10,31 @@ import {
   icon,
   normalizeHex,
   pad2,
+  rgbaToPngBlob,
   slugify,
 } from "./utils.js";
 import {
+  EMISSION_SCALES,
+  PBR_MASK_SIZES,
   buildProjectPayload,
   cloneStrip,
   createBlankStrip,
   createDefaultProject,
   makeStop,
+  normalizePbr,
   normalizeProject,
   stripFromPreset,
 } from "./project.js";
 import { PRESET_CATEGORIES, RAMPS_PRESETS, getPreset } from "./presets.js";
 import {
   MAX_ATLAS_COLUMNS,
+  createPbrMaskData,
   getBandHeightForStrip,
   getBandMetrics,
   getEffectiveAtlasColumns,
   paintCanvasFromCanvas,
   renderAtlasToCanvas,
+  renderPbrMaskToCanvas,
   renderRampToCanvas,
   sampleStripColor,
 } from "./atlas.js";
@@ -89,11 +94,10 @@ const els = {
   statResolution: $("#stat-resolution"),
   viewportUvPill: $("#viewport-uv-pill"),
   viewportUvLabel: $("#viewport-uv-label"),
-  btnExport: $("#btn-export"),
   btnExportAtlas: $("#btn-export-atlas"),
   btnExportAtlasModal: $("#btn-export-atlas-modal"),
+  btnExportPbrAtlas: $("#btn-export-pbr-atlas"),
   btnSave: $("#btn-save"),
-  btnSaveProjectAtlas: $("#btn-save-project-atlas"),
   btnImport: $("#btn-import"),
   importFile: $("#import-file"),
   btnAddRamp: $("#btn-add-ramp"),
@@ -127,7 +131,7 @@ const appState = {
   selectedStripId: null,
   selectedStopId: null,
   inspectorTab: "ramp",
-  inspectorScrollPositions: { ramp: 0, global: 0 },
+  inspectorScrollPositions: { ramp: 0, pbr: 0, global: 0 },
   presetCategory: "Todos",
   mesh: "cube",
   shading: "pbr",
@@ -138,14 +142,19 @@ const appState = {
   uvRegion: null,
   uvDrag: null,
   uvHintShown: false,
+  pbrChannelView: "rgba",
   stopDrag: null,
   curveDrag: null,
   paletteFrame: null,
+  pbrFrame: null,
   saveTimer: null,
   isExporting: false,
+  isPbrExporting: false,
+  isSavingFile: false,
 };
 
 let viewer = null;
+let pbrMaskCanvas = null;
 let toastId = 0;
 
 /* =========================================================
@@ -631,9 +640,12 @@ function updateAtlasMeta() {
   els.statResolution.textContent = `${size}²`;
   els.atlasEmpty.hidden = hasStrips;
   els.atlasModalMeta.textContent = `${resolution} px · PNG sRGB${columnMeta}`;
-  [els.btnExport, els.btnExportAtlas, els.btnExportAtlasModal].forEach((button) => {
+  [els.btnExportAtlas, els.btnExportAtlasModal].forEach((button) => {
     if (button) button.disabled = !hasStrips || appState.isExporting;
   });
+  if (els.btnExportPbrAtlas) {
+    els.btnExportPbrAtlas.disabled = !hasStrips || appState.isPbrExporting;
+  }
   els.atlasCanvas.setAttribute("aria-label", `Atlas de degradados de ${ramps} ${rampWord}, ${resolution} píxeles`);
   els.atlasModalCanvas.setAttribute("aria-label", `Vista ampliada del atlas, ${resolution} píxeles`);
 }
@@ -645,9 +657,50 @@ function refreshAtlas() {
   updateAtlasMeta();
   viewer?.refreshTexture(hasStrips);
   updateUvPreview();
+  refreshPbrMask();
   if (els.atlasModal.open) {
     paintCanvasFromCanvas(els.atlasModalCanvas, els.atlasCanvas);
   }
+}
+
+function ensurePbrMaskCanvas() {
+  if (!pbrMaskCanvas) pbrMaskCanvas = document.createElement("canvas");
+  return pbrMaskCanvas;
+}
+
+function refreshPbrMask() {
+  if (!appState.project) return;
+  const hasStrips = appState.project.strips.length > 0;
+  const canvas = ensurePbrMaskCanvas();
+  const emissionScale = appState.project.emissionScale;
+  renderPbrMaskToCanvas(canvas, appState.project, {
+    size: appState.project.pbrMaskSize,
+    view: "raw",
+  });
+
+  const hasAlpha = appState.project.strips.some((strip) => {
+    const opacity = Number.isFinite(Number(strip.pbr?.opacity))
+      ? Number(strip.pbr.opacity)
+      : 1;
+    return opacity < 0.999;
+  });
+  viewer?.setPbrMask(canvas, {
+    enabled: hasStrips,
+    emissionScale,
+    hasAlpha,
+  });
+
+  if (appState.inspectorTab === "pbr") {
+    drawPbrPreview();
+  }
+}
+
+function schedulePbrRefresh() {
+  if (appState.pbrFrame) return;
+  appState.pbrFrame = requestAnimationFrame(() => {
+    appState.pbrFrame = null;
+    refreshPbrMask();
+  });
 }
 
 function schedulePaletteRefresh() {
@@ -671,7 +724,7 @@ function pushPaletteChange() {
    Inspector rendering
    ========================================================= */
 function setInspectorTab(tab) {
-  if (!["ramp", "global"].includes(tab) || tab === appState.inspectorTab) return;
+  if (!["ramp", "pbr", "global"].includes(tab) || tab === appState.inspectorTab) return;
   appState.inspectorScrollPositions[appState.inspectorTab] = els.inspectorScroll.scrollTop;
   appState.inspectorTab = tab;
   renderInspector({ preserveScroll: false });
@@ -689,6 +742,8 @@ function renderInspector({ preserveScroll = true } = {}) {
 
   if (appState.inspectorTab === "global") {
     renderGlobalTab();
+  } else if (appState.inspectorTab === "pbr") {
+    renderPbrTab();
   } else {
     renderRampTab();
   }
@@ -699,7 +754,7 @@ function renderInspector({ preserveScroll = true } = {}) {
 }
 
 function ensureInspectorTab() {
-  if (!["ramp", "global"].includes(appState.inspectorTab)) {
+  if (!["ramp", "pbr", "global"].includes(appState.inspectorTab)) {
     appState.inspectorTab = "ramp";
   }
 }
@@ -957,8 +1012,147 @@ function renderRampTab() {
   if (strip.interpolation === "smooth") drawCurveEditor();
 }
 
-function renderGlobalTab() {
-  els.inspectorContent.innerHTML = globalTabMarkup();
+function pbrValueBytes(strip, emissionScale) {
+  const pbr = normalizePbr(strip?.pbr, emissionScale);
+  return {
+    roughness: Math.round(pbr.roughness * 255),
+    metallic: Math.round(pbr.metallic * 255),
+    emission: Math.round((pbr.emission / emissionScale) * 255),
+    opacity: Math.round(pbr.opacity * 255),
+  };
+}
+
+function pbrFieldMarkup({ key, channel, label, value, min, max, step, scaleLeft, scaleRight, output }) {
+  return `
+    <div class="pbr-field" data-pbr-field="${key}">
+      <div class="pbr-field__head">
+        <span class="channel-badge channel-badge--${channel.toLowerCase()}">${channel}</span>
+        <span class="pbr-field__label">${label}</span>
+        <output class="pbr-field__value" data-pbr-output="${key}">${output}</output>
+      </div>
+      <input class="range" type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-pbr="${key}" aria-label="${label}">
+      <div class="pbr-field__scale"><span>${scaleLeft}</span><span>${scaleRight}</span></div>
+    </div>`;
+}
+
+function renderPbrTab() {
+  const strip = activeStrip();
+  if (!strip) {
+    els.inspectorContent.innerHTML = emptyInspectorMarkup();
+    return;
+  }
+
+  const project = appState.project;
+  const stripIndex = project.strips.findIndex((item) => item.id === strip.id);
+  const metric = getBandMetrics(project).find((cell) => cell.id === strip.id);
+  const activeColumns = getEffectiveAtlasColumns(project);
+  const columnNumber = (metric?.column || 0) + 1;
+  const pbr = normalizePbr(strip.pbr, project.emissionScale);
+  const bytes = pbrValueBytes(strip, project.emissionScale);
+  const field = (key, value, min, max, step, scaleLeft, scaleRight, output, channel) => pbrFieldMarkup({
+    key,
+    channel,
+    label: key === "roughness" ? "Rugosidad" : key === "metallic" ? "Metálico" : key === "emission" ? "Emisión" : "Opacidad",
+    value,
+    min,
+    max,
+    step,
+    scaleLeft,
+    scaleRight,
+    output,
+  });
+
+  els.inspectorContent.innerHTML = `
+    <div class="ramp-overview pbr-overview">
+      <div class="ramp-overview__title">
+        <span class="eyebrow">MATERIAL PBR · C${columnNumber} / ${activeColumns}</span>
+        <h2>${escapeHTML(strip.name)}</h2>
+      </div>
+      <span class="pbr-cell-chip">${metric?.width || project.atlasSize}×${metric?.height || 0}px</span>
+    </div>
+    <div class="pbr-intro">
+      ${icon("pbr")}
+      <span>Valores constantes para esta celda. La máscara replica exactamente la cuadrícula del atlas y usa los mismos UV.</span>
+    </div>
+
+    <section class="control-section">
+      <div class="control-section__head">
+        <div class="control-heading__title"><strong>Parámetros de superficie</strong><small>CONSTANTES · RGBA8</small></div>
+      </div>
+      <div class="pbr-fields">
+        ${field("roughness", pbr.roughness, 0, 1, 0.01, "LISO", "MATE", `${pbr.roughness.toFixed(2)} <small>R ${bytes.roughness}</small>`, "R")}
+        ${field("metallic", pbr.metallic, 0, 1, 0.01, "DIELÉCTRICO", "METAL", `${pbr.metallic.toFixed(2)} <small>G ${bytes.metallic}</small>`, "G")}
+        ${field("emission", pbr.emission, 0, project.emissionScale, 0.01, "SIN EMISIÓN", `${project.emissionScale.toFixed(0)}×`, `${pbr.emission.toFixed(2)} <small>B ${bytes.emission}</small>`, "B")}
+        ${field("opacity", pbr.opacity, 0, 1, 0.01, "TRANSPARENTE", "OPACO", `${pbr.opacity.toFixed(2)} <small>A ${bytes.opacity}</small>`, "A")}
+      </div>
+    </section>
+
+    <section class="control-section">
+      <div class="control-section__head">
+        <div class="control-heading__title"><strong>Máscara empaquetada</strong><small>LINEAL · NO sRGB</small></div>
+      </div>
+      <div class="pbr-channel-map">
+        <div class="pbr-channel-map__item"><span class="channel-badge channel-badge--r">R</span> Rugosidad</div>
+        <div class="pbr-channel-map__item"><span class="channel-badge channel-badge--g">G</span> Metálico</div>
+        <div class="pbr-channel-map__item"><span class="channel-badge channel-badge--b">B</span> Emisión</div>
+        <div class="pbr-channel-map__item"><span class="channel-badge channel-badge--a">A</span> Opacidad</div>
+      </div>
+      <div class="pbr-preview-card">
+        <div class="pbr-preview-card__head">
+          <span>PREVIEW DE CANALES</span>
+          <span>${project.pbrMaskSize}²</span>
+        </div>
+        <div class="pbr-preview-card__stage">
+          <canvas id="pbr-mask-preview" width="${project.pbrMaskSize}" height="${project.pbrMaskSize}" aria-label="Vista previa de la máscara PBR"></canvas>
+        </div>
+        <div class="pbr-preview-card__foot">
+          <div class="segmented pbr-channel-switcher" id="pbr-channel-switcher" role="group" aria-label="Canal de la máscara a previsualizar">
+            ${["rgba", "r", "g", "b", "a"].map((channel) => `<button type="button" data-pbr-view="${channel}" class="${appState.pbrChannelView === channel ? "is-active" : ""}" aria-pressed="${appState.pbrChannelView === channel}">${channel === "rgba" ? "RGBA" : channel.toUpperCase()}</button>`).join("")}
+          </div>
+          <span class="pbr-byte-type">RGBA8</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="control-section">
+      <div class="control-section__head">
+        <div class="control-heading__title"><strong>Exportación de máscara</strong><small>PNG · LINEAL</small></div>
+      </div>
+      <div class="pbr-settings-grid">
+        <label class="select-field">
+          <span>Resolución</span>
+          <select class="select-input" id="pbr-mask-size-select">
+            ${PBR_MASK_SIZES.map((size) => `<option value="${size}" ${project.pbrMaskSize === size ? "selected" : ""}>${size} × ${size}</option>`).join("")}
+          </select>
+        </label>
+        <label class="select-field">
+          <span>Escala de emisión</span>
+          <select class="select-input" id="pbr-emission-scale">
+            ${EMISSION_SCALES.map((scale) => `<option value="${scale}" ${project.emissionScale === scale ? "selected" : ""}>${scale.toFixed(0)}×</option>`).join("")}
+          </select>
+        </label>
+      </div>
+      <div class="control-note">
+        ${icon("alert")}
+        <span>El canal B se normaliza: <strong>B = emisión / ${project.emissionScale.toFixed(0)}</strong>. Multiplica B por ${project.emissionScale.toFixed(0)} en Godot para recuperar la intensidad. No importes esta máscara como sRGB.</span>
+      </div>
+      <button class="btn btn--primary btn--small pbr-export-button" type="button" data-action="export-pbr-mask">
+        ${icon("download")} Descargar máscara PBR
+      </button>
+      <p class="pbr-export-note">La máscara sigue la misma cuadrícula y UV que el atlas de color. El alpha se exporta sin premultiplicar para no alterar los datos.</p>
+    </section>
+  `;
+
+  drawPbrPreview();
+}
+
+function drawPbrPreview() {
+  const canvas = $("#pbr-mask-preview", els.inspectorContent);
+  if (!canvas || !activeStrip()) return;
+  renderPbrMaskToCanvas(canvas, appState.project, {
+    size: appState.project.pbrMaskSize,
+    view: appState.pbrChannelView,
+  });
 }
 
 /* =========================================================
@@ -1163,12 +1357,12 @@ function setSavingState({ saving = false, error = false } = {}) {
     return;
   }
   if (saving) {
-    els.saveLabel.textContent = "Guardando…";
-    els.saveState.title = "Guardando cambios";
+    els.saveLabel.textContent = "Autoguardando…";
+    els.saveState.title = "Guardando cambios en este navegador";
   } else {
     const time = new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
-    els.saveLabel.textContent = "Guardado local";
-    els.saveState.title = `Guardado en este navegador a las ${time}`;
+    els.saveLabel.textContent = "Autoguardado";
+    els.saveState.title = `Autoguardado en este navegador a las ${time}`;
   }
 }
 
@@ -1196,13 +1390,16 @@ function saveLocalNow() {
    Actions: ramps, stops, presets
    ========================================================= */
 function selectStrip(id, { openInspectorOnMobile = false } = {}) {
+  const previousTab = appState.inspectorTab;
+  const preservedTab = ["ramp", "pbr"].includes(previousTab) ? previousTab : "ramp";
+
   if (appState.selectedStripId === id) {
-    if (appState.inspectorTab !== "ramp") appState.inspectorTab = "ramp";
+    appState.inspectorTab = preservedTab;
     renderInspector({ preserveScroll: false });
     return;
   }
   appState.selectedStripId = id;
-  appState.inspectorTab = "ramp";
+  appState.inspectorTab = preservedTab;
   const strip = activeStrip();
   appState.selectedStopId = interestingStop(strip)?.id || null;
   renderRampList();
@@ -1221,7 +1418,10 @@ function addRamp() {
   let number = project.strips.length + 1;
   const existingNames = new Set(project.strips.map((strip) => strip.name.toLowerCase()));
   while (existingNames.has(`nueva rampa ${number}`.toLowerCase())) number += 1;
-  const newStrip = createBlankStrip({ name: `Nueva rampa ${number}` });
+  const newStrip = createBlankStrip({
+    name: `Nueva rampa ${number}`,
+    emissionScale: project.emissionScale,
+  });
   let insertIndex = project.strips.length;
   const currentIndex = project.strips.findIndex((strip) => strip.id === appState.selectedStripId);
   if (currentIndex >= 0) insertIndex = currentIndex + 1;
@@ -1355,6 +1555,8 @@ function applyPresetToStrip(presetId) {
     name: strip.name,
     orientation: strip.orientation,
     weight: strip.weight,
+    pbr: strip.pbr,
+    emissionScale: project.emissionScale,
   });
   project.strips[index] = applied;
   appState.selectedStopId = interestingStop(applied)?.id || null;
@@ -1554,19 +1756,50 @@ function currentFileName(extension) {
   return `${slugify(appState.project.name)}_${appState.project.atlasSize}.${extension}`;
 }
 
-function saveProjectFile() {
-  const payload = buildProjectPayload(appState.project);
-  downloadText(
-    JSON.stringify(payload, null, 2),
-    `${slugify(appState.project.name)}.rampforge.json`,
-    "application/json",
-  );
-  queueAutosave();
-  showToast({
-    type: "success",
-    title: "Proyecto guardado",
-    message: "Colores, curvas, alturas y ajustes globales incluidos en el .json.",
-  });
+async function saveProjectFile() {
+  if (appState.isSavingFile) return;
+  appState.isSavingFile = true;
+  const filename = `${slugify(appState.project.name)}.rampforge.json`;
+  const json = JSON.stringify(buildProjectPayload(appState.project), null, 2);
+  const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+
+  try {
+    if (typeof window.showSaveFilePicker === "function") {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [
+            {
+              description: "Proyecto RampForge",
+              accept: { "application/json": [".json"] },
+            },
+          ],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        showToast({
+          type: "success",
+          title: "Archivo JSON guardado",
+          message: `${handle.name || filename} · ubicación elegida en el diálogo del sistema.`,
+        });
+        return;
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+        console.warn("No se pudo usar el diálogo de guardado; se usará la descarga del navegador.", error);
+      }
+    }
+
+    downloadBlob(blob, filename);
+    showToast({
+      type: "success",
+      title: "Descarga de proyecto iniciada",
+      message: `${filename} va a la carpeta de descargas configurada en tu navegador.`,
+      duration: 5600,
+    });
+  } finally {
+    appState.isSavingFile = false;
+  }
 }
 
 async function exportAtlasPNG() {
@@ -1598,6 +1831,54 @@ async function exportAtlasPNG() {
     showToast({ type: "error", title: "Error de exportación", message: "No se pudo generar el archivo PNG." });
   } finally {
     appState.isExporting = false;
+    updateAtlasMeta();
+  }
+}
+
+async function exportPbrMaskPNG() {
+  if (appState.isPbrExporting) return;
+  if (appState.project.strips.length === 0) {
+    showToast({
+      type: "error",
+      title: "Máscara vacía",
+      message: "Añade al menos una rampa para exportar la máscara PBR.",
+    });
+    return;
+  }
+
+  appState.isPbrExporting = true;
+  const buttons = [
+    ...$$('[data-action="export-pbr-mask"]', els.inspectorContent),
+    els.btnExportPbrAtlas,
+  ];
+  buttons.forEach((button) => {
+    if (button) button.disabled = true;
+  });
+  updateAtlasMeta();
+
+  try {
+    refreshPbrMask();
+    const mask = createPbrMaskData(appState.project);
+    const blob = await rgbaToPngBlob(mask.data, mask.width, mask.height);
+    downloadBlob(blob, `${slugify(appState.project.name)}_pbr_${mask.size}.png`);
+    showToast({
+      type: "success",
+      title: "Máscara PBR exportada",
+      message: `${mask.width} × ${mask.height} · RGBA8 lineal · R rough / G metal / B emission / A opacity`,
+      duration: 6000,
+    });
+  } catch (error) {
+    console.error(error);
+    showToast({
+      type: "error",
+      title: "Error de exportación",
+      message: "No se pudo generar la máscara PBR.",
+    });
+  } finally {
+    appState.isPbrExporting = false;
+    $$('[data-action="export-pbr-mask"]', els.inspectorContent).forEach((button) => {
+      button.disabled = false;
+    });
     updateAtlasMeta();
   }
 }
@@ -1754,12 +2035,11 @@ function bindEvents() {
     }
   });
   els.btnSave.addEventListener("click", saveProjectFile);
-  els.btnSaveProjectAtlas.addEventListener("click", saveProjectFile);
   els.btnImport.addEventListener("click", () => els.importFile.click());
   els.importFile.addEventListener("change", () => importProjectFile(els.importFile.files?.[0]));
-  els.btnExport.addEventListener("click", exportAtlasPNG);
   els.btnExportAtlas.addEventListener("click", exportAtlasPNG);
   els.btnExportAtlasModal.addEventListener("click", exportAtlasPNG);
+  els.btnExportPbrAtlas.addEventListener("click", exportPbrMaskPNG);
   els.btnResetProject.addEventListener("click", resetDemoProject);
 
   // Atlas size
@@ -2058,6 +2338,11 @@ function handleInspectorInput(event) {
   const strip = activeStrip();
   if (!strip) return;
 
+  if (target.dataset.pbr) {
+    handlePbrInput(target, strip);
+    return;
+  }
+
   if (target.dataset.adjust) {
     handleAdjustInput(target);
     return;
@@ -2152,10 +2437,66 @@ function handleInspectorInput(event) {
   }
 }
 
+function handlePbrInput(target, strip) {
+  const key = target.dataset.pbr;
+  if (!["roughness", "metallic", "emission", "opacity"].includes(key)) return;
+  const max = key === "emission" ? appState.project.emissionScale : 1;
+  const value = clamp(Number(target.value), 0, max);
+  strip.pbr = normalizePbr({ ...strip.pbr, [key]: value }, appState.project.emissionScale);
+  target.value = String(strip.pbr[key]);
+  syncRangeFill(target);
+
+  const output = target.closest(".pbr-field")?.querySelector("[data-pbr-output]");
+  if (output) {
+    const pbr = strip.pbr;
+    const byte = key === "emission"
+      ? Math.round((pbr.emission / appState.project.emissionScale) * 255)
+      : Math.round(pbr[key] * 255);
+    const channel = { roughness: "R", metallic: "G", emission: "B", opacity: "A" }[key];
+    output.innerHTML = `${pbr[key].toFixed(2)} <small>${channel} ${byte}</small>`;
+  }
+
+  schedulePbrRefresh();
+  queueAutosave();
+}
+
 function handleInspectorChange(event) {
   const target = event.target;
   const strip = activeStrip();
   if (!strip) return;
+
+  if (target.id === "pbr-mask-size-select") {
+    const size = Number(target.value);
+    if (!PBR_MASK_SIZES.includes(size)) return;
+    appState.project.pbrMaskSize = size;
+    renderInspector();
+    schedulePbrRefresh();
+    queueAutosave();
+    return;
+  }
+
+  if (target.id === "pbr-emission-scale") {
+    const scale = Number(target.value);
+    if (!EMISSION_SCALES.includes(scale)) return;
+    const previousScale = appState.project.emissionScale;
+    let clipped = false;
+    appState.project.emissionScale = scale;
+    appState.project.strips.forEach((item) => {
+      if (Number(item.pbr?.emission) > scale) clipped = true;
+      item.pbr = normalizePbr(item.pbr, scale);
+    });
+    renderInspector();
+    schedulePbrRefresh();
+    queueAutosave();
+    if (clipped && scale < previousScale) {
+      showToast({
+        type: "info",
+        title: "Emisión ajustada",
+        message: `Las emisiones superiores a ${scale}× se han limitado a la nueva escala.`,
+      });
+    }
+    return;
+  }
 
   if (target.id === "stop-position") {
     reorderStopsByPosition();
@@ -2200,6 +2541,18 @@ function handleInspectorChange(event) {
 }
 
 function handleInspectorClick(event) {
+  const pbrViewButton = event.target.closest("[data-pbr-view]");
+  if (pbrViewButton) {
+    appState.pbrChannelView = pbrViewButton.dataset.pbrView;
+    $$("[data-pbr-view]", els.inspectorContent).forEach((button) => {
+      const active = button.dataset.pbrView === appState.pbrChannelView;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    drawPbrPreview();
+    return;
+  }
+
   const actionButton = event.target.closest("[data-action]");
   if (actionButton) {
     event.preventDefault();
@@ -2217,6 +2570,7 @@ function handleInspectorClick(event) {
     if (action === "open-presets") openPresetModal();
     if (action === "reset-global") resetGlobalAdjustments();
     if (action === "add-ramp") addRamp();
+    if (action === "export-pbr-mask") exportPbrMaskPNG();
     return;
   }
 
@@ -2302,12 +2656,14 @@ function bootViewer() {
       canvas: els.threeCanvas,
       textureCanvas: els.atlasCanvas,
       hasTexture: appState.project.strips.length > 0,
+      pbrCanvas: pbrMaskCanvas,
     });
     viewer.setLight(appState.light);
     viewer.setShading(appState.shading);
     viewer.setMesh(appState.mesh, { animate: false });
     viewer.setAutoRotate(appState.autoRotate);
     updateUvPreview();
+    refreshPbrMask();
     window.setTimeout(() => els.viewerLoader.classList.add("is-hidden"), 260);
   } catch (error) {
     console.error("No se pudo inicializar Three.js:", error);
@@ -2335,6 +2691,7 @@ function init() {
 
   els.projectName.value = appState.project.name;
   document.title = `RampForge — ${appState.project.name}`;
+  ensurePbrMaskCanvas();
   bindEvents();
   renderAll();
   bootViewer();
@@ -2353,6 +2710,9 @@ function init() {
         mesh: appState.mesh,
         shading: appState.shading,
         atlasColumns: appState.project.atlasColumns,
+        pbrMaskSize: appState.project.pbrMaskSize,
+        emissionScale: appState.project.emissionScale,
+        pbrChannelView: appState.pbrChannelView,
         uvMode: appState.uvMode,
         uvRegion: appState.uvRegion ? { ...appState.uvRegion } : null,
       }),
